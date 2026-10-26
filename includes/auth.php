@@ -126,8 +126,7 @@ function requireStudent(): void
 
     if (isAdmin()) {
         setFlash('info', 'Kabinet talabalar uchun. Kutubxonachi sifatida admin paneldan foydalaning.');
-        // Admin panel (4-bosqich) tayyor bo'lgach, bu yerni 'admin/index.php' ga o'zgartiramiz
-        redirect('index.php');
+        redirect('admin/index.php');
     }
 }
 

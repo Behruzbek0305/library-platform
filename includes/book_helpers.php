@@ -91,6 +91,24 @@ function renderBookCard(array $book): void
 }
 
 // ------------------------------------------------------------
+// 3.1. MUQOVA RASMINI DISKDAN O'CHIRISH (admin kitobni o'chirganda yoki rasmni almashtirganda)
+//      Faqat uploads/covers/ papkasidagi fayllar o'chiriladi (boshqa joyga tegilmaydi).
+// ------------------------------------------------------------
+function deleteCoverFile(?string $relativePath): void
+{
+    if ($relativePath === null || $relativePath === ''
+        || !str_starts_with($relativePath, 'uploads/covers/')
+        || str_contains($relativePath, '..')) {
+        return;
+    }
+
+    $fullPath = __DIR__ . '/../' . $relativePath;
+    if (is_file($fullPath)) {
+        @unlink($fullPath);
+    }
+}
+
+// ------------------------------------------------------------
 // 4. BAND QILISH HOLATI BELGISI (kabinet va admin panelda ishlatiladi)
 // ------------------------------------------------------------
 function statusBadge(string $status): string
@@ -98,6 +116,7 @@ function statusBadge(string $status): string
     return match ($status) {
         'tasdiqlandi' => '<span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">Tasdiqlandi</span>',
         'qaytarildi'  => '<span class="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">Qaytarildi</span>',
+        'rad_etildi'  => '<span class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">Rad etildi</span>',
         default       => '<span class="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Kutilmoqda</span>',
     };
 }

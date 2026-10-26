@@ -74,14 +74,14 @@ CREATE TABLE `books` (
 -- ------------------------------------------------------------
 -- 4. JADVAL: reservations (Band qilishlar)
 --    Maydonlar: foydalanuvchi, kitob, sana, holati
---    Holatlar: kutilmoqda, tasdiqlandi, qaytarildi
+--    Holatlar: kutilmoqda, tasdiqlandi, qaytarildi, rad_etildi
 -- ------------------------------------------------------------
 CREATE TABLE `reservations` (
   `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,       -- Band qilish ID raqami
   `user_id`       INT UNSIGNED NOT NULL,                      -- Kim band qildi (users.id)
   `book_id`       INT UNSIGNED NOT NULL,                      -- Qaysi kitob (books.id)
   `reserved_date` DATE NOT NULL,                              -- Band qilingan sana
-  `status`        ENUM('kutilmoqda','tasdiqlandi','qaytarildi') NOT NULL DEFAULT 'kutilmoqda', -- Holati
+  `status`        ENUM('kutilmoqda','tasdiqlandi','qaytarildi','rad_etildi') NOT NULL DEFAULT 'kutilmoqda', -- Holati
   `created_at`    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Yozuv yaratilgan vaqt
   PRIMARY KEY (`id`),
   KEY `idx_res_user` (`user_id`),

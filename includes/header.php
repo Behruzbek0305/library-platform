@@ -25,9 +25,10 @@ $currentPath = ltrim(str_replace(BASE_URL, '', $_SERVER['SCRIPT_NAME']), '/');
 $navItems = [
     ['file' => 'index.php',       'label' => "Bosh sahifa",         'show' => true],
     ['file' => 'catalog.php',     'label' => "Katalog",             'show' => true],
-    ['file' => 'resources.php',   'label' => "Elektron resurslar",  'show' => $user !== null],
+    ['file' => 'resources.php',   'label' => "Elektron resurslar",  'show' => $user !== null && $user['role'] === 'talaba'],
     ['file' => 'cabinet.php',     'label' => "Mening kabinetim",    'show' => $user !== null && $user['role'] === 'talaba'],
-    ['file' => 'admin/index.php', 'label' => "Admin panel",         'show' => isAdmin()],
+    ['file' => 'admin/index.php', 'label' => "Band qilishlar",      'show' => isAdmin()],
+    ['file' => 'admin/books.php', 'label' => "Kitoblarni boshqarish", 'show' => isAdmin()],
     ['file' => 'login.php',       'label' => "Kirish",              'show' => $user === null],
     ['file' => 'register.php',    'label' => "Ro'yxatdan o'tish",   'show' => $user === null],
 ];

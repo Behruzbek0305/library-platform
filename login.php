@@ -61,9 +61,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     loginUser((int) $found['id']);
                     setFlash('success', 'Xush kelibsiz, ' . $found['name'] . '!');
 
-                    // Hozircha hamma bosh sahifaga o'tadi.
-                    // Keyingi bosqichda admin uchun 'admin/index.php' ga o'zgartiramiz.
-                    redirect('index.php');
+                    // Kutubxonachi – admin panelga, talaba – bosh sahifaga
+                    redirect($found['role'] === 'admin' ? 'admin/index.php' : 'index.php');
                 }
 
                 // Email yoki parol noto'g'ri (qaysi biri ekanini aytmaymiz)
