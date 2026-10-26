@@ -9,6 +9,9 @@
 
 declare(strict_types=1);
 
+// Sana va vaqt O'zbekiston vaqti bo'yicha ishlashi uchun (band qilish sanasi shu bilan yoziladi)
+date_default_timezone_set('Asia/Tashkent');
+
 // ------------------------------------------------------------
 // 1. SAYT MANZILI (BASE_URL)
 //    Loyiha /srv/http/library-platform/ ichida turgani uchun
