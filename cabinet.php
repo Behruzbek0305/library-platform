@@ -13,8 +13,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/book_helpers.php';
 
-// Faqat tizimga kirganlar uchun
-requireLogin();
+// Faqat tizimga kirgan talabalar uchun (kutubxonachi kira olmaydi)
+requireStudent();
 $user = currentUser();
 
 // ------------------------------------------------------------
