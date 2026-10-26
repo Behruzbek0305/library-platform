@@ -118,12 +118,6 @@ require_once __DIR__ . '/includes/header.php';
         <a href="<?= e(url('register.php')) ?>" class="text-blue-600 hover:underline">Ro'yxatdan o'tish</a>
     </p>
 
-    <!-- Sinov uchun akkauntlar (loyiha tugagach bu blokni o'chiring) -->
-    <div class="mt-5 text-xs text-slate-500 border-t border-slate-200 pt-3">
-        Sinash uchun:<br>
-        Admin: <b>admin@kutubxona.uz</b> / <b>admin123</b><br>
-        Talaba: <b>talaba@kutubxona.uz</b> / <b>talaba123</b>
-    </div>
 </div>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
