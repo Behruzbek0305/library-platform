@@ -178,8 +178,9 @@ require_once __DIR__ . '/../includes/header.php';
         Hozircha band qilishlar yo'q.
     </div>
 <?php else: ?>
-    <div class="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-        <table class="w-full min-w-[640px] text-sm text-left">
+    <!-- Kompyuter va planshet (768px dan keng): jadval -->
+    <div class="hidden md:block bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <table class="w-full text-sm text-left">
             <thead class="bg-slate-50">
                 <tr>
                     <th class="px-4 py-3">Talaba</th>
@@ -193,17 +194,17 @@ require_once __DIR__ . '/../includes/header.php';
                 <?php foreach ($reservations as $r): ?>
                     <tr class="border-t border-slate-200">
                         <td class="px-4 py-3">
-                            <div class="font-semibold"><?= e($r['user_name']) ?></div>
-                            <div class="text-slate-500"><?= e($r['user_email']) ?></div>
+                            <div class="font-semibold break-words"><?= e($r['user_name']) ?></div>
+                            <div class="text-slate-500 break-all"><?= e($r['user_email']) ?></div>
                         </td>
                         <td class="px-4 py-3">
                             <a href="<?= e(url('book.php?id=' . (int) $r['book_id'])) ?>"
-                               class="text-blue-600 hover:underline"><?= e($r['book_title']) ?></a>
+                               class="text-blue-600 hover:underline break-words"><?= e($r['book_title']) ?></a>
                         </td>
                         <td class="px-4 py-3"><?= e(date('d.m.Y', strtotime((string) $r['reserved_date']))) ?></td>
                         <td class="px-4 py-3"><?= statusBadge((string) $r['status']) ?></td>
                         <td class="px-4 py-3">
-                            <div class="flex gap-2 justify-end">
+                            <div class="flex flex-wrap gap-2 justify-end">
                                 <?php if ($r['status'] === 'kutilmoqda'): ?>
                                     <!-- Tasdiqlash -->
                                     <form method="post" action="<?= e(url('admin/index.php')) ?>">
@@ -244,6 +245,64 @@ require_once __DIR__ . '/../includes/header.php';
                 <?php endforeach; ?>
             </tbody>
         </table>
+    </div>
+
+    <!-- Telefon (768px dan tor): har bir band qilish alohida kartochka -->
+    <div class="md:hidden space-y-3">
+        <?php foreach ($reservations as $r): ?>
+            <div class="bg-white border border-slate-200 rounded-xl p-4">
+                <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                        <div class="font-semibold break-words"><?= e($r['user_name']) ?></div>
+                        <div class="text-sm text-slate-500 break-all"><?= e($r['user_email']) ?></div>
+                    </div>
+                    <div class="shrink-0"><?= statusBadge((string) $r['status']) ?></div>
+                </div>
+
+                <div class="mt-2 text-sm">
+                    <a href="<?= e(url('book.php?id=' . (int) $r['book_id'])) ?>"
+                       class="text-blue-600 hover:underline break-words"><?= e($r['book_title']) ?></a>
+                    <div class="text-slate-500"><?= e(date('d.m.Y', strtotime((string) $r['reserved_date']))) ?></div>
+                </div>
+
+                <?php if ($r['status'] === 'kutilmoqda'): ?>
+                    <div class="mt-3 grid grid-cols-2 gap-2">
+                        <!-- Tasdiqlash -->
+                        <form method="post" action="<?= e(url('admin/index.php')) ?>">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="action" value="approve">
+                            <input type="hidden" name="reservation_id" value="<?= (int) $r['id'] ?>">
+                            <input type="hidden" name="status_filter" value="<?= e($filter) ?>">
+                            <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white text-sm rounded-md py-2">
+                                Tasdiqlash
+                            </button>
+                        </form>
+                        <!-- Rad etish -->
+                        <form method="post" action="<?= e(url('admin/index.php')) ?>"
+                              onsubmit="return confirm('Bu band qilishni rad etmoqchimisiz? Talaba kabinetida \'Rad etildi\' deb ko\'rinadi.');">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="action" value="reject">
+                            <input type="hidden" name="reservation_id" value="<?= (int) $r['id'] ?>">
+                            <input type="hidden" name="status_filter" value="<?= e($filter) ?>">
+                            <button type="submit" class="w-full bg-red-600 hover:bg-red-700 text-white text-sm rounded-md py-2">
+                                Rad etish
+                            </button>
+                        </form>
+                    </div>
+                <?php elseif ($r['status'] === 'tasdiqlandi'): ?>
+                    <!-- Qaytarildi -->
+                    <form method="post" action="<?= e(url('admin/index.php')) ?>" class="mt-3">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="action" value="return">
+                        <input type="hidden" name="reservation_id" value="<?= (int) $r['id'] ?>">
+                        <input type="hidden" name="status_filter" value="<?= e($filter) ?>">
+                        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-md py-2">
+                            Qaytarildi
+                        </button>
+                    </form>
+                <?php endif; ?>
+            </div>
+        <?php endforeach; ?>
     </div>
 <?php endif; ?>
 

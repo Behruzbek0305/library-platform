@@ -89,8 +89,9 @@ require_once __DIR__ . '/includes/header.php';
         <a href="<?= e(url('catalog.php')) ?>" class="text-blue-600 hover:underline">Katalogga o'tish</a>
     </div>
 <?php else: ?>
-    <div class="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-        <table class="w-full min-w-[520px] text-sm text-left">
+    <!-- Kompyuter va planshet (768px dan keng): jadval -->
+    <div class="hidden md:block bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <table class="w-full text-sm text-left">
             <thead class="bg-slate-50">
                 <tr>
                     <th class="px-4 py-3">Kitob</th>
@@ -104,8 +105,8 @@ require_once __DIR__ . '/includes/header.php';
                     <tr class="border-t border-slate-200">
                         <td class="px-4 py-3">
                             <a href="<?= e(url('book.php?id=' . (int) $r['book_id'])) ?>"
-                               class="font-semibold text-blue-600 hover:underline"><?= e($r['title']) ?></a>
-                            <div class="text-slate-500"><?= e($r['author']) ?></div>
+                               class="font-semibold text-blue-600 hover:underline break-words"><?= e($r['title']) ?></a>
+                            <div class="text-slate-500 break-words"><?= e($r['author']) ?></div>
                         </td>
                         <td class="px-4 py-3"><?= e(date('d.m.Y', strtotime((string) $r['reserved_date']))) ?></td>
                         <td class="px-4 py-3"><?= statusBadge((string) $r['status']) ?></td>
@@ -126,6 +127,38 @@ require_once __DIR__ . '/includes/header.php';
                 <?php endforeach; ?>
             </tbody>
         </table>
+    </div>
+
+    <!-- Telefon (768px dan tor): har bir band qilish alohida kartochka -->
+    <div class="md:hidden space-y-3">
+        <?php foreach ($reservations as $r): ?>
+            <div class="bg-white border border-slate-200 rounded-xl p-4">
+                <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                        <a href="<?= e(url('book.php?id=' . (int) $r['book_id'])) ?>"
+                           class="font-semibold text-blue-600 hover:underline break-words"><?= e($r['title']) ?></a>
+                        <div class="text-sm text-slate-500 break-words"><?= e($r['author']) ?></div>
+                    </div>
+                    <div class="shrink-0"><?= statusBadge((string) $r['status']) ?></div>
+                </div>
+
+                <div class="mt-2 text-sm text-slate-500">
+                    Sana: <?= e(date('d.m.Y', strtotime((string) $r['reserved_date']))) ?>
+                </div>
+
+                <?php if ($r['status'] === 'kutilmoqda'): ?>
+                    <form method="post" action="<?= e(url('cabinet.php')) ?>" class="mt-3"
+                          onsubmit="return confirm('Band qilishni bekor qilmoqchimisiz?');">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="cancel_id" value="<?= (int) $r['id'] ?>">
+                        <button type="submit"
+                                class="w-full bg-red-600 hover:bg-red-700 text-white text-sm rounded-md py-2">
+                            Bekor qilish
+                        </button>
+                    </form>
+                <?php endif; ?>
+            </div>
+        <?php endforeach; ?>
     </div>
 <?php endif; ?>
 

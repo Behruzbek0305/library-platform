@@ -96,8 +96,9 @@ require_once __DIR__ . '/../includes/header.php';
         Katalogda hali kitoblar yo'q.
     </div>
 <?php else: ?>
-    <div class="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-        <table class="w-full min-w-[720px] text-sm text-left">
+    <!-- Kompyuter va planshet (768px dan keng): jadval -->
+    <div class="hidden md:block bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <table class="w-full text-sm text-left">
             <thead class="bg-slate-50">
                 <tr>
                     <th class="px-4 py-3">Nomi</th>
@@ -110,15 +111,15 @@ require_once __DIR__ . '/../includes/header.php';
             <tbody>
                 <?php foreach ($books as $b): ?>
                     <tr class="border-t border-slate-200">
-                        <td class="px-4 py-3 font-semibold">
+                        <td class="px-4 py-3 font-semibold break-words">
                             <a href="<?= e(url('book.php?id=' . (int) $b['id'])) ?>"
                                class="hover:underline"><?= e($b['title']) ?></a>
                         </td>
-                        <td class="px-4 py-3"><?= e($b['author']) ?></td>
+                        <td class="px-4 py-3 break-words"><?= e($b['author']) ?></td>
                         <td class="px-4 py-3"><?= e($b['category']) ?></td>
                         <td class="px-4 py-3"><?= (int) $b['available'] ?> / <?= (int) $b['copies'] ?></td>
                         <td class="px-4 py-3">
-                            <div class="flex gap-2 justify-end">
+                            <div class="flex flex-wrap gap-2 justify-end">
                                 <a href="<?= e(url('admin/book_form.php?id=' . (int) $b['id'])) ?>"
                                    class="bg-slate-700 hover:bg-slate-800 text-white text-xs rounded-md px-3 py-1.5">
                                     Tahrirlash
@@ -137,6 +138,39 @@ require_once __DIR__ . '/../includes/header.php';
                 <?php endforeach; ?>
             </tbody>
         </table>
+    </div>
+
+    <!-- Telefon (768px dan tor): har bir kitob alohida kartochka -->
+    <div class="md:hidden space-y-3">
+        <?php foreach ($books as $b): ?>
+            <div class="bg-white border border-slate-200 rounded-xl p-4">
+                <a href="<?= e(url('book.php?id=' . (int) $b['id'])) ?>"
+                   class="font-semibold hover:underline break-words"><?= e($b['title']) ?></a>
+                <div class="text-sm text-slate-500 break-words"><?= e($b['author']) ?></div>
+
+                <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    <span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600"><?= e($b['category']) ?></span>
+                    <span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                        Bo'sh: <?= (int) $b['available'] ?> / <?= (int) $b['copies'] ?>
+                    </span>
+                </div>
+
+                <div class="mt-3 grid grid-cols-2 gap-2">
+                    <a href="<?= e(url('admin/book_form.php?id=' . (int) $b['id'])) ?>"
+                       class="text-center bg-slate-700 hover:bg-slate-800 text-white text-sm rounded-md py-2">
+                        Tahrirlash
+                    </a>
+                    <form method="post" action="<?= e(url('admin/books.php')) ?>"
+                          onsubmit="return confirm('Bu kitobni o\'chirishni xohlaysizmi?');">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="delete_id" value="<?= (int) $b['id'] ?>">
+                        <button type="submit" class="w-full bg-red-600 hover:bg-red-700 text-white text-sm rounded-md py-2">
+                            O'chirish
+                        </button>
+                    </form>
+                </div>
+            </div>
+        <?php endforeach; ?>
     </div>
 <?php endif; ?>
 
