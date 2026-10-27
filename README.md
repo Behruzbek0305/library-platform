@@ -21,6 +21,8 @@ Texnik topshiriqdagi 8 ta asosiy imkoniyat:
 | 7 | Kitob qo'shish, tahrirlash va o'chirish (muqova rasmi bilan) | Kutubxonachi | `admin/books.php`, `admin/book_form.php` |
 | 8 | Band qilishlarni ko'rish, tasdiqlash va rad etish | Kutubxonachi | `admin/index.php` |
 
+Qo'shimcha qulayliklar: qidiruvda yozish paytida tavsiyalar chiqadi (Enter bosilsa, natijalar ro'yxat ko'rinishida), telefonda menyu o'ng tomondan ochiladi, jadvallar telefonda kartochkaga aylanadi.
+
 ### Band qilish holatlari
 
 | Holat | Ma'nosi | Nusxani band qiladimi? |
@@ -38,7 +40,7 @@ Texnik topshiriqdagi 8 ta asosiy imkoniyat:
 
 - **Backend:** sof PHP 8.1+ (PDO, framework yo'q)
 - **Baza:** MySQL / MariaDB (`utf8mb4_unicode_ci`)
-- **Frontend:** HTML5, [Tailwind CSS](https://tailwindcss.com) (CDN orqali), bir necha qator oddiy JavaScript (telefon menyusi uchun)
+- **Frontend:** HTML5, [Tailwind CSS](https://tailwindcss.com) (CDN orqali), oddiy JavaScript (yon menyu va jonli qidiruv uchun, kutubxonasiz)
 - **Narx:** faqat bepul vositalar
 
 Eslatma: texnik topshiriqdagi "Variant B" HTML/CSS/JS + Firebase edi. Loyiha o'rniga PHP + MySQL bilan yozildi, chunki ma'lumotlar server tomonida saqlanadi va parol xavfsiz xeshlanadi.
@@ -134,6 +136,7 @@ library-platform/
 ├── book.php             Kitob sahifasi va "Band qilish" tugmasi
 ├── reserve.php          Band qilish (POST, tranzaksiya bilan)
 ├── cabinet.php          Talabaning kabineti
+├── search.php           Qidiruv tavsiyalari (JSON), yozish paytida chaqiriladi
 ├── resources.php        Elektron resurslar (faqat talaba)
 ├── register.php         Ro'yxatdan o'tish
 ├── login.php            Kirish
@@ -148,6 +151,9 @@ library-platform/
 │   ├── book_helpers.php Kategoriyalar, kitob kartochkasi, holat belgisi
 │   ├── header.php       Menyu va umumiy yuqori qism
 │   └── footer.php       Umumiy pastki qism
+├── assets/js/
+│   ├── menu.js          Telefon uchun o'ngdan ochiladigan yon menyu
+│   └── live-search.js   Yozish paytida kitob tavsiyalari
 ├── config/
 │   ├── db.php           Baza ulanishi (GitHub'da yo'q)
 │   └── db.example.php   Namuna (parolsiz)
