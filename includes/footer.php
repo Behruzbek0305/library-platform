@@ -2,8 +2,12 @@
 /**
  * ============================================================
  *  Fayl: includes/footer.php
- *  Vazifasi: Sahifaning pastki qismi (</main>, footer, kichik JavaScript).
+ *  Vazifasi: Sahifaning pastki qismi (</main>, footer, JavaScript fayllari).
  *  header.php da ochilgan <main> shu yerda yopiladi.
+ *
+ *  JavaScript fayllari (Vanilla JS, assets/js/ papkasida):
+ *    menu.js         – telefon uchun yon panel (drawer)
+ *    live-search.js  – qidiruvda yozish paytidagi tavsiyalar
  * ============================================================
  */
 ?>
@@ -14,11 +18,7 @@
         © <?= date('Y') ?> Kutubxona – axborot resurs markazi. Talabalar loyihasi.
     </footer>
 
-    <!-- Telefon menyusini ochish/yopish (oddiy Vanilla JS) -->
-    <script>
-        document.getElementById('menuToggle').addEventListener('click', function () {
-            document.getElementById('nav').classList.toggle('hidden');
-        });
-    </script>
+    <script src="<?= e(url('assets/js/menu.js')) ?>" defer></script>
+    <script src="<?= e(url('assets/js/live-search.js')) ?>" defer></script>
 </body>
 </html>

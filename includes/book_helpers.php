@@ -91,6 +91,50 @@ function renderBookCard(array $book): void
 }
 
 // ------------------------------------------------------------
+// 3.0. KITOB QATORI – RO'YXAT KO'RINISHI (qidiruv natijalari uchun)
+//      Kichik muqova, nomi, muallifi, kategoriya va "Bor / Hozir yo'q" belgisi.
+// ------------------------------------------------------------
+function renderBookRow(array $book): void
+{
+    $style     = categoryStyle((string) $book['category']);
+    $available = (int) $book['available'];
+    ?>
+    <a href="<?= e(url('book.php?id=' . (int) $book['id'])) ?>"
+       class="flex items-center gap-3 p-3 hover:bg-slate-50">
+
+        <!-- Kichik muqova -->
+        <div class="w-14 h-14 shrink-0 rounded-lg overflow-hidden flex items-center justify-center text-2xl <?= e($style['bg']) ?>">
+            <?php if (!empty($book['cover_image'])): ?>
+                <img src="<?= e(url((string) $book['cover_image'])) ?>" alt="" class="w-full h-full object-cover">
+            <?php else: ?>
+                <?= $style['emoji'] ?>
+            <?php endif; ?>
+        </div>
+
+        <!-- Nomi, muallifi, kategoriya -->
+        <div class="min-w-0 flex-1">
+            <div class="font-bold leading-snug truncate"><?= e($book['title']) ?></div>
+            <div class="text-sm text-slate-500 truncate"><?= e($book['author']) ?></div>
+            <span class="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
+                <?= e($book['category']) ?>
+            </span>
+        </div>
+
+        <!-- Bor yoki yo'q -->
+        <?php if ($available > 0): ?>
+            <span class="shrink-0 text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                Bor: <?= $available ?> ta
+            </span>
+        <?php else: ?>
+            <span class="shrink-0 text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                Hozir yo'q
+            </span>
+        <?php endif; ?>
+    </a>
+    <?php
+}
+
+// ------------------------------------------------------------
 // 3.1. MUQOVA RASMINI DISKDAN O'CHIRISH (admin kitobni o'chirganda yoki rasmni almashtirganda)
 //      Faqat uploads/covers/ papkasidagi fayllar o'chiriladi (boshqa joyga tegilmaydi).
 // ------------------------------------------------------------

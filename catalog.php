@@ -45,7 +45,13 @@ if ($category !== '') {
     $params[':category'] = $category;
 }
 
-$sql .= ' ORDER BY b.title ASC';
+if ($q !== '') {
+    // Eng mosi tepada: avval nomi shu so'z bilan boshlanadiganlar, keyin qolganlari
+    $sql .= ' ORDER BY (b.title LIKE :q_prefix) DESC, b.title ASC';
+    $params[':q_prefix'] = addcslashes($q, '%_\\') . '%';
+} else {
+    $sql .= ' ORDER BY b.title ASC';
+}
 
 $books = [];
 try {
@@ -70,9 +76,16 @@ require_once __DIR__ . '/includes/header.php';
 <form method="get" action="<?= e(url('catalog.php')) ?>"
       class="grid grid-cols-1 md:grid-cols-[2fr_1fr_auto_auto] gap-2 mb-3">
 
-    <input type="text" name="q" value="<?= e($q) ?>" maxlength="100"
-           placeholder="Nomi yoki muallifi bo'yicha qidirish..."
-           class="border border-slate-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300">
+    <!-- Yozish paytidagi tavsiyalar shu blokning ichida chiqadi (assets/js/live-search.js) -->
+    <div class="relative min-w-0">
+        <input type="text" name="q" value="<?= e($q) ?>" maxlength="100"
+               placeholder="Nomi yoki muallifi bo'yicha qidirish..."
+               aria-label="Nomi yoki muallifi bo'yicha qidirish"
+               data-live-search
+               data-endpoint="<?= e(url('search.php')) ?>"
+               data-catalog="<?= e(url('catalog.php')) ?>"
+               class="w-full min-w-0 border border-slate-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300">
+    </div>
 
     <select name="category"
             class="border border-slate-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300">
@@ -97,7 +110,15 @@ require_once __DIR__ . '/includes/header.php';
 <p class="text-slate-500 mb-4">Topildi: <?= count($books) ?> ta kitob</p>
 
 <!-- ====== NATIJALAR ====== -->
-<?php if ($books): ?>
+<?php if ($books && $q !== ''): ?>
+    <!-- Qidiruv natijalari: ro'yxat ko'rinishida (eng mosi tepada) -->
+    <div class="bg-white border border-slate-200 rounded-xl divide-y divide-slate-200 overflow-hidden">
+        <?php foreach ($books as $book): ?>
+            <?php renderBookRow($book); ?>
+        <?php endforeach; ?>
+    </div>
+<?php elseif ($books): ?>
+    <!-- Oddiy ko'rish: kartochkalar -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <?php foreach ($books as $book): ?>
             <?php renderBookCard($book); ?>

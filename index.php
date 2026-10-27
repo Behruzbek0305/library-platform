@@ -46,10 +46,23 @@ require_once __DIR__ . '/includes/header.php';
     </p>
 
     <!-- Qidiruv katalog sahifasiga GET orqali yuboriladi -->
-    <form method="get" action="<?= e(url('catalog.php')) ?>" class="flex gap-2 max-w-xl mx-auto">
-        <input type="text" name="q" maxlength="100" placeholder="Kitob nomi yoki muallif..."
-               class="flex-1 rounded-md px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-300">
-        <button type="submit" class="bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-md px-5 py-2">
+    <!-- relative + data-live-search-root: yozish paytidagi tavsiyalar oynasi butun forma
+         kengligicha chiqadi (assets/js/live-search.js) -->
+    <form method="get" action="<?= e(url('catalog.php')) ?>" class="relative flex gap-2 max-w-xl mx-auto"
+          data-live-search-root>
+
+        <!-- min-w-0: tor ekranda input kichrayib, tugma sig'ib turishi uchun -->
+        <div class="flex-1 min-w-0">
+            <input type="text" name="q" maxlength="100" placeholder="Kitob nomi yoki muallif..."
+                   aria-label="Kitob nomi yoki muallifi"
+                   data-live-search
+                   data-endpoint="<?= e(url('search.php')) ?>"
+                   data-catalog="<?= e(url('catalog.php')) ?>"
+                   class="w-full min-w-0 rounded-md px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-300">
+        </div>
+
+        <button type="submit"
+                class="shrink-0 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-md px-4 sm:px-5 py-2">
             Qidirish
         </button>
     </form>
