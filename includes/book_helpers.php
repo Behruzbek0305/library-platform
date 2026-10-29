@@ -234,12 +234,125 @@ function deleteCoverFile(?string $relativePath): void
 // ------------------------------------------------------------
 // 4. BAND QILISH HOLATI BELGISI (kabinet va admin panelda ishlatiladi)
 // ------------------------------------------------------------
-function statusBadge(string $status): string
+function statusBadge(string $status, ?string $deadline = null): string
 {
+    if ($status === 'rad_etildi') {
+        $isOverdue = $deadline !== null && $deadline !== '' && strtotime($deadline) < time();
+        $label = $isOverdue ? "Rad etildi (muddati o'tgan)" : "Rad etildi";
+        return '<span class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">' . e($label) . '</span>';
+    }
+
     return match ($status) {
-        'tasdiqlandi' => '<span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">Tasdiqlandi</span>',
-        'qaytarildi'  => '<span class="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">Qaytarildi</span>',
-        'rad_etildi'  => '<span class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">Rad etildi</span>',
-        default       => '<span class="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Kutilmoqda</span>',
+        'tasdiqlandi' => '<span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Tasdiqlandi</span>',
+        'qaytarildi'  => '<span class="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-medium">Qaytarildi</span>',
+        default       => '<span class="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Kutilmoqda</span>',
     };
+}
+
+// ------------------------------------------------------------
+// 5. OLIB KETISH MUDDATI (1, 2 yoki 3 kun) VA AVTOMATIK RAD ETISH
+// ------------------------------------------------------------
+const MAX_PICKUP_DAYS = 3;
+const PICKUP_DAY_OPTIONS = [1, 2, 3];
+
+/**
+ * Olib ketish muddati o'tib ketgan, hali "kutilmoqda" holatidagi band qilishlarni
+ * avtomatik "rad_etildi" holatiga o'tkazadi.
+ * Natijada kitob nusxasi darhol bo'shab, boshqa talabalar uchun ochiq bo'ladi.
+ */
+function expireOverdueReservations(PDO $pdo): int
+{
+    static $alreadyRun = false;
+    if ($alreadyRun) {
+        return 0;
+    }
+    $alreadyRun = true;
+
+    try {
+        $stmt = $pdo->prepare(
+            "UPDATE reservations
+             SET status = 'rad_etildi'
+             WHERE status = 'kutilmoqda'
+               AND pickup_deadline IS NOT NULL
+               AND pickup_deadline < NOW()"
+        );
+        $stmt->execute();
+        return (int) $stmt->rowCount();
+    } catch (PDOException $ex) {
+        error_log('[Kutubxona-ARM] Muddati o\'tgan band qilishlarni yangilashda xatolik: ' . $ex->getMessage());
+        return 0;
+    }
+}
+
+/**
+ * Qolgan vaqtni hisoblaydi va inson o'qiy oladigan matn qaytaradi.
+ * Masalan: "1 kun 4 soat qoldi", "14 soat qoldi", "Muddati o'tgan".
+ */
+function formatRemainingTime(?string $deadline): array
+{
+    if ($deadline === null || $deadline === '') {
+        return ['text' => '', 'expired' => false, 'urgent' => false];
+    }
+
+    $now = time();
+    $target = strtotime($deadline);
+    $diff = $target - $now;
+
+    if ($diff <= 0) {
+        return [
+            'text'    => "Muddati o'tgan",
+            'expired' => true,
+            'urgent'  => false,
+        ];
+    }
+
+    $hours   = (int) floor($diff / 3600);
+    $minutes = (int) floor(($diff % 3600) / 60);
+
+    if ($hours >= 24) {
+        $days     = (int) floor($hours / 24);
+        $remHours = $hours % 24;
+        $text     = $days . ' kun' . ($remHours > 0 ? ' ' . $remHours . ' soat' : '') . ' qoldi';
+        $urgent   = false;
+    } elseif ($hours > 0) {
+        $text   = $hours . ' soat' . ($minutes > 0 ? ' ' . $minutes . ' daqiqa' : '') . ' qoldi';
+        $urgent = $hours <= 6; // oxirgi 6 soat qolganda ogohlantiruvchi qizil
+    } else {
+        $text   = max(1, $minutes) . ' daqiqa qoldi';
+        $urgent = true;
+    }
+
+    return [
+        'text'    => $text,
+        'expired' => false,
+        'urgent'  => $urgent,
+    ];
+}
+
+/**
+ * Band qilish formalarida olib ketish muddatini tanlash maydoni
+ */
+function renderPickupSelect(string $selectId = 'pickup_days', string $selectName = 'pickup_days', int $default = 1): void
+{
+    ?>
+    <div class="space-y-1 text-left">
+        <label for="<?= e($selectId) ?>" class="block text-sm font-semibold text-slate-700">
+            Qachon olib ketasiz? (Olib ketish muddati)
+        </label>
+        <select id="<?= e($selectId) ?>" name="<?= e($selectName) ?>" required
+                class="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+            <option value="1" <?= $default === 1 ? 'selected' : '' ?>>1 kun ichida (24 soat)</option>
+            <option value="2" <?= $default === 2 ? 'selected' : '' ?>>2 kun ichida (48 soat)</option>
+            <option value="3" <?= $default === 3 ? 'selected' : '' ?>>3 kun ichida (uzog'i 3 kun / 72 soat)</option>
+        </select>
+        <p class="text-xs text-slate-500">
+            ⚠️ Tanlangan muddat ichida olib ketmasangiz, band qilish avtomatik rad etiladi.
+        </p>
+    </div>
+    <?php
+}
+
+// Global $pdo mavjud bo'lsa, muddati o'tganlarni avtomatik tozalaymiz
+if (isset($pdo) && $pdo instanceof PDO) {
+    expireOverdueReservations($pdo);
 }

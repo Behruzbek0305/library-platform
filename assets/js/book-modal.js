@@ -38,8 +38,9 @@
     var categoryEl = document.getElementById('bookModalCategory');
     var availEl    = document.getElementById('bookModalAvailable');
     var descEl     = document.getElementById('bookModalDesc');
-    var bookIdEl   = document.getElementById('bookModalBookId');
-    var moreLink   = document.getElementById('bookModalMore');
+    var bookIdEl     = document.getElementById('bookModalBookId');
+    var pickupSelect = document.getElementById('modal_pickup_days');
+    var moreLink     = document.getElementById('bookModalMore');
 
     var role      = modal.getAttribute('data-role');   // guest | student | admin
     var stateEls  = modal.querySelectorAll('[data-state]');
@@ -82,6 +83,9 @@
         categoryEl.textContent = data.category || '';
         descEl.textContent     = data.description || 'Tavsif kiritilmagan.';
         bookIdEl.value         = data.id || '';
+        if (pickupSelect) {
+            pickupSelect.value = '1';
+        }
         moreLink.href          = card.href;
 
         // Bo'sh nusxalar belgisi

@@ -16,7 +16,7 @@ Texnik topshiriqdagi 8 ta asosiy imkoniyat:
 | 2 | Kitoblar katalogini ko'rish | Hamma | `catalog.php`, `book.php` |
 | 3 | Nomi yoki muallifi bo'yicha qidirish | Hamma | `index.php`, `catalog.php` |
 | 4 | Kategoriya bo'yicha saralash (darslik, badiiy, ilmiy) | Hamma | `catalog.php` |
-| 5 | Kitobni band qilish va o'z band qilganlarini ko'rish | Talaba | `reserve.php`, `cabinet.php` |
+| 5 | Kitobni band qilish (1, 2, 3 kun muddat bilan) va o'z band qilganlarini ko'rish | Talaba | `reserve.php`, `cabinet.php` |
 | 6 | Elektron resursni (PDF, havola) yuklab olish | Talaba | `resources.php` |
 | 7 | Kitob qo'shish, tahrirlash va o'chirish (muqova rasmi bilan) | Kutubxonachi | `admin/books.php`, `admin/book_form.php` |
 | 8 | Band qilishlarni ko'rish, tasdiqlash va rad etish | Kutubxonachi | `admin/index.php` |
@@ -30,9 +30,9 @@ Qo'shimcha qulayliklar: qidiruvda yozish paytida tavsiyalar chiqadi (Enter bosil
 | Kutilmoqda | Talaba band qildi, kutubxonachi hali ko'rmagan | Ha |
 | Tasdiqlandi | Kutubxonachi tasdiqladi, kitob talabada | Ha |
 | Qaytarildi | Talaba kitobni qaytardi | Yo'q |
-| Rad etildi | Kutubxonachi rad etdi (talaba ham ko'radi) | Yo'q |
+| Rad etildi | Kutubxonachi rad etdi yoki olib ketish muddati o'tib avtomatik rad etildi | Yo'q |
 
-> Texnik topshiriqda uchta holat yozilgan edi. "Rad etildi" holati sinov paytida qo'shildi, shunda talaba kitob nega tasdiqlanmaganini biladi.
+> **Olib ketish muddati (3-bosqich):** Talaba kitob band qilishda olib ketish muddatini (1 kun, 2 kun yoki ko'pi bilan 3 kun) belgilaydi. Belgilangan muddat ichida kutubxonachi tasdiqlab, talaba olib ketmasa, tizim avtomatik ravishda band qilishni "Rad etildi (muddati o'tgan)" holatiga o'tkazadi va kitob darhol boshqa talabalar uchun bo'sh bo'ladi. Shuningdek, `scripts/expire_reservations.php` orqali cron vazifa qilib qo'yish ham mumkin.
 
 ---
 

@@ -15,6 +15,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/book_helpers.php';
 require_once __DIR__ . '/includes/student_helpers.php';
 
 // 1) Faqat POST so'rov qabul qilinadi
@@ -50,6 +51,13 @@ if ($bookId === false || $bookId < 1) {
     setFlash('error', "Noto'g'ri so'rov.");
     redirect('catalog.php');
 }
+
+// 4.1) Olib ketish muddati (1, 2 yoki 3 kun, uzog'i 3 kun)
+$pickupDays = filter_var($_POST['pickup_days'] ?? 1, FILTER_VALIDATE_INT);
+if ($pickupDays === false || $pickupDays < 1 || $pickupDays > MAX_PICKUP_DAYS) {
+    $pickupDays = 1;
+}
+$pickupDeadline = date('Y-m-d H:i:s', strtotime("+{$pickupDays} days"));
 
 $bookPage = 'book.php?id=' . $bookId;
 
@@ -98,18 +106,21 @@ try {
 
     // Band qilishni yozamiz (holati: kutilmoqda – kutubxonachi tasdiqlaydi)
     $stmt = $pdo->prepare(
-        "INSERT INTO reservations (user_id, book_id, reserved_date, status)
-         VALUES (:user_id, :book_id, :reserved_date, 'kutilmoqda')"
+        "INSERT INTO reservations (user_id, book_id, reserved_date, pickup_days, pickup_deadline, status)
+         VALUES (:user_id, :book_id, :reserved_date, :pickup_days, :pickup_deadline, 'kutilmoqda')"
     );
     $stmt->execute([
-        ':user_id'       => $user['id'],
-        ':book_id'       => $bookId,
-        ':reserved_date' => date('Y-m-d'),
+        ':user_id'         => $user['id'],
+        ':book_id'         => $bookId,
+        ':reserved_date'   => date('Y-m-d'),
+        ':pickup_days'     => $pickupDays,
+        ':pickup_deadline' => $pickupDeadline,
     ]);
 
     $pdo->commit();
 
-    setFlash('success', "«" . $book['title'] . "» band qilindi! Kutubxonachi tasdiqlashini kuting.");
+    $deadlineText = date('d.m.Y H:i', strtotime($pickupDeadline));
+    setFlash('success', "«" . $book['title'] . "» band qilindi! Olib ketish muddati: {$pickupDays} kun ({$deadlineText} gacha). Kutubxonachi tasdiqlashini kuting.");
     redirect('cabinet.php');
 
 } catch (PDOException $ex) {

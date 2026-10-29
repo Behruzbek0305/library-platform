@@ -85,9 +85,12 @@ $modalRole  = $footerUser === null ? 'guest' : ($footerUser['role'] === 'talaba'
                     </button>
 
                     <!-- Talaba: band qilish (reserve.php avvalgidek ishlaydi) -->
-                    <form data-state="reserve" method="post" action="<?= e(url('reserve.php')) ?>" class="hidden">
+                    <form data-state="reserve" method="post" action="<?= e(url('reserve.php')) ?>" class="hidden space-y-3">
                         <?= csrfField() ?>
                         <input type="hidden" name="book_id" id="bookModalBookId" value="">
+
+                        <?php renderPickupSelect('modal_pickup_days', 'pickup_days', 1); ?>
+
                         <button type="submit"
                                 class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md px-5 py-2.5">
                             Band qilish

@@ -11,6 +11,8 @@
 --    4) resources     – elektron resurslar (PDF yoki havola)
 --
 --  2-bosqich: users jadvaliga fakultet, yo'nalish, guruh va HEMIS ID qo'shildi.
+--  3-bosqich: reservations jadvaliga pickup_days va pickup_deadline qo'shildi,
+--             muddati o'tganda avtomatik rad etish tizimi joriy etildi.
 --
 --  Ishga tushirish: phpMyAdmin → "Import" bo'limidan shu faylni yuklang.
 --  DIQQAT: bu fayl bazani o'chirib qayta yaratadi. Mavjud bazani saqlab qolmoqchi
@@ -86,16 +88,19 @@ CREATE TABLE `books` (
 --    Holatlar: kutilmoqda, tasdiqlandi, qaytarildi, rad_etildi
 -- ------------------------------------------------------------
 CREATE TABLE `reservations` (
-  `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,       -- Band qilish ID raqami
-  `user_id`       INT UNSIGNED NOT NULL,                      -- Kim band qildi (users.id)
-  `book_id`       INT UNSIGNED NOT NULL,                      -- Qaysi kitob (books.id)
-  `reserved_date` DATE NOT NULL,                              -- Band qilingan sana
-  `status`        ENUM('kutilmoqda','tasdiqlandi','qaytarildi','rad_etildi') NOT NULL DEFAULT 'kutilmoqda', -- Holati
-  `created_at`    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Yozuv yaratilgan vaqt
+  `id`              INT UNSIGNED NOT NULL AUTO_INCREMENT,       -- Band qilish ID raqami
+  `user_id`         INT UNSIGNED NOT NULL,                      -- Kim band qildi (users.id)
+  `book_id`         INT UNSIGNED NOT NULL,                      -- Qaysi kitob (books.id)
+  `reserved_date`   DATE NOT NULL,                              -- Band qilingan sana
+  `pickup_days`     TINYINT UNSIGNED NOT NULL DEFAULT 1,        -- Olib ketish muddati: 1, 2 yoki 3 kun
+  `pickup_deadline` DATETIME NOT NULL,                          -- Shu muddatgacha olib ketmasa avtomatik rad etiladi
+  `status`          ENUM('kutilmoqda','tasdiqlandi','qaytarildi','rad_etildi') NOT NULL DEFAULT 'kutilmoqda', -- Holati
+  `created_at`      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Yozuv yaratilgan vaqt
   PRIMARY KEY (`id`),
   KEY `idx_res_user` (`user_id`),
   KEY `idx_res_book` (`book_id`),
   KEY `idx_res_status` (`status`),
+  KEY `idx_res_deadline` (`status`, `pickup_deadline`),
   -- Foydalanuvchi o'chirilsa, uning band qilishlari ham o'chadi
   CONSTRAINT `fk_res_user`
     FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
@@ -191,9 +196,9 @@ INSERT INTO `resources` (`id`, `title`, `type`, `file_url`) VALUES
 -- ------------------------------------------------------------
 -- 6.4. Namunaviy band qilishlar (admin panelni sinash uchun)
 -- ------------------------------------------------------------
-INSERT INTO `reservations` (`user_id`, `book_id`, `reserved_date`, `status`) VALUES
-(2, 9, '2026-10-20', 'kutilmoqda'),
-(2, 1, '2026-10-18', 'tasdiqlandi');
+INSERT INTO `reservations` (`user_id`, `book_id`, `reserved_date`, `pickup_days`, `pickup_deadline`, `status`) VALUES
+(2, 9, '2026-10-20', 2, '2026-10-22 18:00:00', 'kutilmoqda'),
+(2, 1, '2026-10-18', 1, '2026-10-19 18:00:00', 'tasdiqlandi');
 
 -- ------------------------------------------------------------
 -- AUTO_INCREMENT hisoblagichlarini keyingi yozuvlar uchun to'g'rilaymiz

@@ -116,11 +116,14 @@ require_once __DIR__ . '/includes/header.php';
                 </button>
 
             <?php else: ?>
-                <form method="post" action="<?= e(url('reserve.php')) ?>">
+                <form method="post" action="<?= e(url('reserve.php')) ?>" class="max-w-xs space-y-3">
                     <?= csrfField() ?>
                     <input type="hidden" name="book_id" value="<?= (int) $book['id'] ?>">
+
+                    <?php renderPickupSelect('pickup_days', 'pickup_days', 1); ?>
+
                     <button type="submit"
-                            class="bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md px-5 py-2">
+                            class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md px-5 py-2.5">
                         Band qilish
                     </button>
                 </form>

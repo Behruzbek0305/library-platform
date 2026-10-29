@@ -104,7 +104,7 @@ try {
 
     // Band qilishlar: avval kutilayotganlar, keyin tasdiqlanganlar, oxirida qaytarilganlar
     // (talabaning fakulteti, yo'nalishi, guruhi va HEMIS ID'si ham olinadi)
-    $sql = 'SELECT r.id, r.reserved_date, r.status,
+    $sql = 'SELECT r.id, r.reserved_date, r.pickup_days, r.pickup_deadline, r.status,
                    u.name AS user_name, u.email AS user_email,
                    u.faculty, u.direction, u.group_name, u.hemis_id,
                    b.id AS book_id, b.title AS book_title
@@ -191,13 +191,17 @@ require_once __DIR__ . '/../includes/header.php';
                 <tr>
                     <th class="px-4 py-3">Talaba</th>
                     <th class="px-4 py-3">Kitob</th>
-                    <th class="px-4 py-3">Sana</th>
+                    <th class="px-4 py-3">Sana / Muddat</th>
                     <th class="px-4 py-3">Holati</th>
                     <th class="px-4 py-3"></th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($reservations as $r): ?>
+                    <?php
+                    $rem = formatRemainingTime((string) ($r['pickup_deadline'] ?? ''));
+                    $pickupDays = (int) ($r['pickup_days'] ?? 1);
+                    ?>
                     <tr class="border-t border-slate-200">
                         <td class="px-4 py-3">
                             <div class="font-semibold break-words"><?= e($r['user_name']) ?></div>
@@ -213,8 +217,24 @@ require_once __DIR__ . '/../includes/header.php';
                             <a href="<?= e(url('book.php?id=' . (int) $r['book_id'])) ?>"
                                class="text-blue-600 hover:underline break-words"><?= e($r['book_title']) ?></a>
                         </td>
-                        <td class="px-4 py-3"><?= e(date('d.m.Y', strtotime((string) $r['reserved_date']))) ?></td>
-                        <td class="px-4 py-3"><?= statusBadge((string) $r['status']) ?></td>
+                        <td class="px-4 py-3 text-xs">
+                            <div>Band qilingan: <b><?= e(date('d.m.Y', strtotime((string) $r['reserved_date']))) ?></b></div>
+                            <?php if (!empty($r['pickup_deadline'])): ?>
+                                <div class="text-slate-600 mt-0.5">
+                                    Muddati: <b><?= $pickupDays ?> kun</b> (<?= e(date('d.m.Y H:i', strtotime((string) $r['pickup_deadline']))) ?> gacha)
+                                </div>
+                                <?php if ($r['status'] === 'kutilmoqda'): ?>
+                                    <div class="mt-1">
+                                        <?php if ($rem['urgent']): ?>
+                                            <span class="inline-block px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-medium">⚠️ <?= e($rem['text']) ?></span>
+                                        <?php else: ?>
+                                            <span class="inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">⏳ <?= e($rem['text']) ?></span>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                        </td>
+                        <td class="px-4 py-3"><?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? '')) ?></td>
                         <td class="px-4 py-3">
                             <div class="flex flex-wrap gap-2 justify-end">
                                 <?php if ($r['status'] === 'kutilmoqda'): ?>
@@ -262,6 +282,10 @@ require_once __DIR__ . '/../includes/header.php';
     <!-- Telefon (768px dan tor): har bir band qilish alohida kartochka -->
     <div class="md:hidden space-y-3">
         <?php foreach ($reservations as $r): ?>
+            <?php
+            $rem = formatRemainingTime((string) ($r['pickup_deadline'] ?? ''));
+            $pickupDays = (int) ($r['pickup_days'] ?? 1);
+            ?>
             <div class="bg-white border border-slate-200 rounded-xl p-4">
                 <div class="flex items-start justify-between gap-2">
                     <div class="min-w-0">
@@ -274,13 +298,25 @@ require_once __DIR__ . '/../includes/header.php';
                             <div class="text-xs text-slate-500 break-words"><?= e(studentInfoLine($r)) ?></div>
                         <?php endif; ?>
                     </div>
-                    <div class="shrink-0"><?= statusBadge((string) $r['status']) ?></div>
+                    <div class="shrink-0"><?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? '')) ?></div>
                 </div>
 
-                <div class="mt-2 text-sm">
+                <div class="mt-2 text-xs text-slate-600 space-y-1">
                     <a href="<?= e(url('book.php?id=' . (int) $r['book_id'])) ?>"
-                       class="text-blue-600 hover:underline break-words"><?= e($r['book_title']) ?></a>
-                    <div class="text-slate-500"><?= e(date('d.m.Y', strtotime((string) $r['reserved_date']))) ?></div>
+                       class="font-semibold text-sm text-blue-600 hover:underline block break-words"><?= e($r['book_title']) ?></a>
+                    <div>Band qilingan: <b><?= e(date('d.m.Y', strtotime((string) $r['reserved_date']))) ?></b></div>
+                    <?php if (!empty($r['pickup_deadline'])): ?>
+                        <div>Muddati: <b><?= $pickupDays ?> kun</b> (<?= e(date('d.m.Y H:i', strtotime((string) $r['pickup_deadline']))) ?> gacha)</div>
+                        <?php if ($r['status'] === 'kutilmoqda'): ?>
+                            <div class="pt-0.5">
+                                <?php if ($rem['urgent']): ?>
+                                    <span class="inline-block px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-medium">⚠️ <?= e($rem['text']) ?></span>
+                                <?php else: ?>
+                                    <span class="inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">⏳ <?= e($rem['text']) ?></span>
+                                <?php endif; ?>
+                            </div>
+                        <?php endif; ?>
+                    <?php endif; ?>
                 </div>
 
                 <?php if ($r['status'] === 'kutilmoqda'): ?>

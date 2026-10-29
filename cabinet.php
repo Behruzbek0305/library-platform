@@ -59,7 +59,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $reservations = [];
 try {
     $stmt = $pdo->prepare(
-        'SELECT r.id, r.reserved_date, r.status, b.id AS book_id, b.title, b.author
+        'SELECT r.id, r.reserved_date, r.pickup_days, r.pickup_deadline, r.status,
+                b.id AS book_id, b.title, b.author
          FROM reservations r
          JOIN books b ON b.id = r.book_id
          WHERE r.user_id = :user_id
@@ -142,21 +143,41 @@ require_once __DIR__ . '/includes/header.php';
             <thead class="bg-slate-50">
                 <tr>
                     <th class="px-4 py-3">Kitob</th>
-                    <th class="px-4 py-3">Sana</th>
+                    <th class="px-4 py-3">Sana / Muddat</th>
                     <th class="px-4 py-3">Holati</th>
                     <th class="px-4 py-3"></th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($reservations as $r): ?>
+                    <?php
+                    $rem = formatRemainingTime((string) ($r['pickup_deadline'] ?? ''));
+                    $pickupDays = (int) ($r['pickup_days'] ?? 1);
+                    ?>
                     <tr class="border-t border-slate-200">
                         <td class="px-4 py-3">
                             <a href="<?= e(url('book.php?id=' . (int) $r['book_id'])) ?>"
                                class="font-semibold text-blue-600 hover:underline break-words"><?= e($r['title']) ?></a>
                             <div class="text-slate-500 break-words"><?= e($r['author']) ?></div>
                         </td>
-                        <td class="px-4 py-3"><?= e(date('d.m.Y', strtotime((string) $r['reserved_date']))) ?></td>
-                        <td class="px-4 py-3"><?= statusBadge((string) $r['status']) ?></td>
+                        <td class="px-4 py-3 text-xs">
+                            <div>Band qilingan: <b><?= e(date('d.m.Y', strtotime((string) $r['reserved_date']))) ?></b></div>
+                            <?php if (!empty($r['pickup_deadline'])): ?>
+                                <div class="text-slate-600 mt-0.5">
+                                    Olib ketish: <b><?= $pickupDays ?> kun</b> (<?= e(date('d.m.Y H:i', strtotime((string) $r['pickup_deadline']))) ?> gacha)
+                                </div>
+                                <?php if ($r['status'] === 'kutilmoqda'): ?>
+                                    <div class="mt-1">
+                                        <?php if ($rem['urgent']): ?>
+                                            <span class="inline-block px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-medium">⚠️ <?= e($rem['text']) ?></span>
+                                        <?php else: ?>
+                                            <span class="inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">⏳ <?= e($rem['text']) ?></span>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                        </td>
+                        <td class="px-4 py-3"><?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? '')) ?></td>
                         <td class="px-4 py-3 text-right">
                             <?php if ($r['status'] === 'kutilmoqda'): ?>
                                 <form method="post" action="<?= e(url('cabinet.php')) ?>"
@@ -179,6 +200,10 @@ require_once __DIR__ . '/includes/header.php';
     <!-- Telefon (768px dan tor): har bir band qilish alohida kartochka -->
     <div class="md:hidden space-y-3">
         <?php foreach ($reservations as $r): ?>
+            <?php
+            $rem = formatRemainingTime((string) ($r['pickup_deadline'] ?? ''));
+            $pickupDays = (int) ($r['pickup_days'] ?? 1);
+            ?>
             <div class="bg-white border border-slate-200 rounded-xl p-4">
                 <div class="flex items-start justify-between gap-2">
                     <div class="min-w-0">
@@ -186,11 +211,23 @@ require_once __DIR__ . '/includes/header.php';
                            class="font-semibold text-blue-600 hover:underline break-words"><?= e($r['title']) ?></a>
                         <div class="text-sm text-slate-500 break-words"><?= e($r['author']) ?></div>
                     </div>
-                    <div class="shrink-0"><?= statusBadge((string) $r['status']) ?></div>
+                    <div class="shrink-0"><?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? '')) ?></div>
                 </div>
 
-                <div class="mt-2 text-sm text-slate-500">
-                    Sana: <?= e(date('d.m.Y', strtotime((string) $r['reserved_date']))) ?>
+                <div class="mt-2 text-xs text-slate-600 space-y-1">
+                    <div>Band qilingan: <b><?= e(date('d.m.Y', strtotime((string) $r['reserved_date']))) ?></b></div>
+                    <?php if (!empty($r['pickup_deadline'])): ?>
+                        <div>Olib ketish: <b><?= $pickupDays ?> kun</b> (<?= e(date('d.m.Y H:i', strtotime((string) $r['pickup_deadline']))) ?> gacha)</div>
+                        <?php if ($r['status'] === 'kutilmoqda'): ?>
+                            <div class="pt-0.5">
+                                <?php if ($rem['urgent']): ?>
+                                    <span class="inline-block px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-medium">⚠️ <?= e($rem['text']) ?></span>
+                                <?php else: ?>
+                                    <span class="inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">⏳ <?= e($rem['text']) ?></span>
+                                <?php endif; ?>
+                            </div>
+                        <?php endif; ?>
+                    <?php endif; ?>
                 </div>
 
                 <?php if ($r['status'] === 'kutilmoqda'): ?>
