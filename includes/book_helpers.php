@@ -8,6 +8,12 @@
  *
  *  Ulash: require_once __DIR__ . '/includes/book_helpers.php';
  *  (functions.php avval ulangan bo'lishi kerak – auth.php buni qiladi)
+ *
+ *  1-bosqich o'zgarishlari:
+ *    - muqova rasmi kesilmaydi, to'liq ko'rinadi (object-contain)
+ *    - kartochka bosilganda kitob sahifasiga o'tmaydi, qalqib chiqadigan
+ *      oyna ochiladi (assets/js/book-modal.js). JavaScript o'chiq bo'lsa,
+ *      havola avvalgidek kitob sahifasiga olib boradi.
  * ============================================================
  */
 
@@ -47,21 +53,93 @@ const BOOK_SELECT = "
 ";
 
 // ------------------------------------------------------------
+// 2.1. JORIY TALABA BAND QILGAN KITOBLAR ID'LARI
+//      Qalqib chiqadigan oynada "Siz allaqachon band qilgansiz" deb ko'rsatish uchun.
+//      Bir so'rov ichida bazaga faqat bir marta murojaat qilinadi.
+// ------------------------------------------------------------
+function userBookedIds(): array
+{
+    global $pdo;
+    static $ids = null;
+
+    if ($ids !== null) {
+        return $ids;
+    }
+
+    $ids  = [];
+    $user = currentUser();
+
+    // Faqat talabalar kitob band qila oladi
+    if ($user === null || $user['role'] !== 'talaba') {
+        return $ids;
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT DISTINCT book_id FROM reservations
+             WHERE user_id = :user_id AND status IN ('kutilmoqda', 'tasdiqlandi')"
+        );
+        $stmt->execute([':user_id' => $user['id']]);
+        $ids = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    } catch (PDOException $ex) {
+        error_log('[Kutubxona-ARM] Band qilingan kitoblarni olishda xatolik: ' . $ex->getMessage());
+    }
+
+    return $ids;
+}
+
+// ------------------------------------------------------------
+// 2.2. KITOB MA'LUMOTLARI – HTML data-atributlar ko'rinishida
+//      Qalqib chiqadigan oyna (book-modal.js) shu atributlardan o'qiydi.
+//      Hamma qiymat e() orqali o'tadi (XSS'dan himoya).
+// ------------------------------------------------------------
+function bookDataAttrs(array $book): string
+{
+    $style = categoryStyle((string) $book['category']);
+    $cover = !empty($book['cover_image']) ? url((string) $book['cover_image']) : '';
+
+    $attrs = [
+        'data-book-card'   => '',
+        'data-id'          => (string) (int) $book['id'],
+        'data-title'       => (string) $book['title'],
+        'data-author'      => (string) $book['author'],
+        'data-category'    => (string) $book['category'],
+        'data-description' => (string) ($book['description'] ?? ''),
+        'data-copies'      => (string) (int) $book['copies'],
+        'data-available'   => (string) (int) $book['available'],
+        'data-cover'       => $cover,
+        'data-emoji'       => $style['emoji'],
+        'data-bg'          => $style['bg'],
+        'data-booked'      => in_array((int) $book['id'], userBookedIds(), true) ? '1' : '0',
+    ];
+
+    $out = [];
+    foreach ($attrs as $name => $value) {
+        $out[] = $value === '' && $name === 'data-book-card'
+            ? $name
+            : $name . '="' . e($value) . '"';
+    }
+
+    return implode(' ', $out);
+}
+
+// ------------------------------------------------------------
 // 3. KITOB KARTOCHKASI (bosh sahifa va katalogda ishlatiladi)
+//    Bosilganda qalqib chiqadigan oyna ochiladi.
 // ------------------------------------------------------------
 function renderBookCard(array $book): void
 {
     $style     = categoryStyle((string) $book['category']);
     $available = (int) $book['available'];
     ?>
-    <a href="<?= e(url('book.php?id=' . (int) $book['id'])) ?>"
+    <a href="<?= e(url('book.php?id=' . (int) $book['id'])) ?>" <?= bookDataAttrs($book) ?>
        class="block bg-white border border-slate-200 rounded-xl overflow-hidden hover:-translate-y-1 hover:shadow-lg transition">
 
-        <!-- Muqova: rasm bo'lsa rasm, bo'lmasa kategoriya belgisi -->
-        <div class="h-32 flex items-center justify-center text-5xl <?= e($style['bg']) ?>">
+        <!-- Muqova: rasm bo'lsa to'liq ko'rinadi (kesilmaydi), bo'lmasa kategoriya belgisi -->
+        <div class="h-40 flex items-center justify-center text-5xl <?= e($style['bg']) ?>">
             <?php if (!empty($book['cover_image'])): ?>
                 <img src="<?= e(url((string) $book['cover_image'])) ?>" alt="<?= e($book['title']) ?>"
-                     class="h-full w-full object-cover">
+                     class="h-full w-full object-contain">
             <?php else: ?>
                 <?= $style['emoji'] ?>
             <?php endif; ?>
@@ -93,19 +171,20 @@ function renderBookCard(array $book): void
 // ------------------------------------------------------------
 // 3.0. KITOB QATORI – RO'YXAT KO'RINISHI (qidiruv natijalari uchun)
 //      Kichik muqova, nomi, muallifi, kategoriya va "Bor / Hozir yo'q" belgisi.
+//      Bosilganda qalqib chiqadigan oyna ochiladi.
 // ------------------------------------------------------------
 function renderBookRow(array $book): void
 {
     $style     = categoryStyle((string) $book['category']);
     $available = (int) $book['available'];
     ?>
-    <a href="<?= e(url('book.php?id=' . (int) $book['id'])) ?>"
+    <a href="<?= e(url('book.php?id=' . (int) $book['id'])) ?>" <?= bookDataAttrs($book) ?>
        class="flex items-center gap-3 p-3 hover:bg-slate-50">
 
-        <!-- Kichik muqova -->
+        <!-- Kichik muqova (to'liq ko'rinadi) -->
         <div class="w-14 h-14 shrink-0 rounded-lg overflow-hidden flex items-center justify-center text-2xl <?= e($style['bg']) ?>">
             <?php if (!empty($book['cover_image'])): ?>
-                <img src="<?= e(url((string) $book['cover_image'])) ?>" alt="" class="w-full h-full object-cover">
+                <img src="<?= e(url((string) $book['cover_image'])) ?>" alt="" class="w-full h-full object-contain">
             <?php else: ?>
                 <?= $style['emoji'] ?>
             <?php endif; ?>

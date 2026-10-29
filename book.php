@@ -5,6 +5,8 @@
  *  Ko'rsatadi: muqova, muallif, tavsif, bo'sh nusxalar va "Band qilish" tugmasi.
  *  Manzil: book.php?id=5
  *  (Texnik topshiriq, 6-band: "Kitob sahifasi")
+ *
+ *  1-bosqich: muqova rasmi kesilmaydi, to'liq ko'rinadi (object-contain).
  * ============================================================
  */
 
@@ -65,11 +67,11 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="mt-3 bg-white border border-slate-200 rounded-xl overflow-hidden md:flex">
 
-    <!-- Muqova -->
-    <div class="md:w-72 h-56 md:h-auto flex items-center justify-center text-7xl <?= e($style['bg']) ?>">
+    <!-- Muqova: rasm to'liq ko'rinadi (object-contain), kesilmaydi -->
+    <div class="md:w-72 h-72 md:h-auto md:min-h-[18rem] flex items-center justify-center text-7xl <?= e($style['bg']) ?>">
         <?php if (!empty($book['cover_image'])): ?>
             <img src="<?= e(url((string) $book['cover_image'])) ?>" alt="<?= e($book['title']) ?>"
-                 class="h-full w-full object-cover">
+                 class="h-full w-full object-contain">
         <?php else: ?>
             <?= $style['emoji'] ?>
         <?php endif; ?>
