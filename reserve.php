@@ -5,7 +5,8 @@
  *  Funksional talab №5 (Texnik topshiriq, 4-band).
  *
  *  Tekshiruvlar: tizimga kirgan talaba, to'g'ri CSRF token,
- *  kitob mavjud, bo'sh nusxa bor, shu kitob avval band qilinmagan.
+ *  talaba ma'lumotlari to'liq (2-bosqich), kitob mavjud,
+ *  bo'sh nusxa bor, shu kitob avval band qilinmagan.
  *  Ikki talaba bir vaqtda oxirgi nusxani band qilmasligi uchun
  *  tranzaksiya va "FOR UPDATE" qulfi ishlatiladi.
  * ============================================================
@@ -14,6 +15,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/student_helpers.php';
 
 // 1) Faqat POST so'rov qabul qilinadi
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -33,6 +35,13 @@ if ($user['role'] !== 'talaba') {
 if (!csrfVerify($_POST['csrf_token'] ?? null)) {
     setFlash('error', "Sessiya muddati tugagan. Qayta urinib ko'ring.");
     redirect('catalog.php');
+}
+
+// 3.1) Talaba ma'lumotlari to'liqmi? (to'liq ism, fakultet, yo'nalish, guruh, HEMIS ID)
+//      To'liq bo'lmasa, avval profil sahifasida to'ldiradi.
+if (!isStudentProfileComplete($user)) {
+    setFlash('error', "Kitob band qilishdan oldin ma'lumotlaringizni (fakultet, yo'nalish, guruh, HEMIS ID) to'ldiring.");
+    redirect('profile.php');
 }
 
 // 4) Kitob ID'sini tekshiramiz

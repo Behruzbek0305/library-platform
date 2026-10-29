@@ -9,6 +9,9 @@
  *    approve – "kutilmoqda"  → "tasdiqlandi"
  *    return  – "tasdiqlandi" → "qaytarildi"  (kitob qaytarildi, nusxa yana bo'sh)
  *    reject  – "kutilmoqda" → "rad_etildi"  (yozuv saqlanadi, talaba ham ko'radi)
+ *
+ *  2-bosqich: har bir band qilishda talabaning HEMIS ID'si, fakulteti,
+ *  yo'nalishi va guruhi ko'rsatiladi (kitobni kimga berishni aniqlash uchun).
  * ============================================================
  */
 
@@ -16,6 +19,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/book_helpers.php';
+require_once __DIR__ . '/../includes/student_helpers.php';
 
 // Faqat kutubxonachi kira oladi
 requireAdmin();
@@ -99,8 +103,10 @@ try {
     )->fetch();
 
     // Band qilishlar: avval kutilayotganlar, keyin tasdiqlanganlar, oxirida qaytarilganlar
+    // (talabaning fakulteti, yo'nalishi, guruhi va HEMIS ID'si ham olinadi)
     $sql = 'SELECT r.id, r.reserved_date, r.status,
                    u.name AS user_name, u.email AS user_email,
+                   u.faculty, u.direction, u.group_name, u.hemis_id,
                    b.id AS book_id, b.title AS book_title
             FROM reservations r
             JOIN users u ON u.id = r.user_id
@@ -196,6 +202,12 @@ require_once __DIR__ . '/../includes/header.php';
                         <td class="px-4 py-3">
                             <div class="font-semibold break-words"><?= e($r['user_name']) ?></div>
                             <div class="text-slate-500 break-all"><?= e($r['user_email']) ?></div>
+                            <?php if (!empty($r['hemis_id'])): ?>
+                                <div class="text-xs text-slate-600 mt-1">HEMIS ID: <b><?= e($r['hemis_id']) ?></b></div>
+                            <?php endif; ?>
+                            <?php if (studentInfoLine($r) !== ''): ?>
+                                <div class="text-xs text-slate-500 break-words"><?= e(studentInfoLine($r)) ?></div>
+                            <?php endif; ?>
                         </td>
                         <td class="px-4 py-3">
                             <a href="<?= e(url('book.php?id=' . (int) $r['book_id'])) ?>"
@@ -255,6 +267,12 @@ require_once __DIR__ . '/../includes/header.php';
                     <div class="min-w-0">
                         <div class="font-semibold break-words"><?= e($r['user_name']) ?></div>
                         <div class="text-sm text-slate-500 break-all"><?= e($r['user_email']) ?></div>
+                        <?php if (!empty($r['hemis_id'])): ?>
+                            <div class="text-xs text-slate-600 mt-1">HEMIS ID: <b><?= e($r['hemis_id']) ?></b></div>
+                        <?php endif; ?>
+                        <?php if (studentInfoLine($r) !== ''): ?>
+                            <div class="text-xs text-slate-500 break-words"><?= e(studentInfoLine($r)) ?></div>
+                        <?php endif; ?>
                     </div>
                     <div class="shrink-0"><?= statusBadge((string) $r['status']) ?></div>
                 </div>

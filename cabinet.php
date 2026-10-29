@@ -2,7 +2,7 @@
 /**
  * ============================================================
  *  Fayl: cabinet.php – Mening kabinetim
- *  Ko'rsatadi: foydalanuvchining band qilgan kitoblari va holati.
+ *  Ko'rsatadi: talabaning ma'lumotlari (2-bosqich), band qilgan kitoblari va holati.
  *  Holati "kutilmoqda" bo'lganini bekor qilish mumkin.
  *  (Texnik topshiriq: funksional talab №5, sahifa "Mening kabinetim")
  * ============================================================
@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/book_helpers.php';
+require_once __DIR__ . '/includes/student_helpers.php';
 
 // Faqat tizimga kirgan talabalar uchun (kutubxonachi kira olmaydi)
 requireStudent();
@@ -71,6 +72,19 @@ try {
     setFlash('error', "Ma'lumotlarni yuklashda xatolik yuz berdi.");
 }
 
+// Talaba ma'lumotlari to'liqmi? (to'liq bo'lmasa, ogohlantirish chiqadi)
+$profileComplete = isStudentProfileComplete($user);
+
+// Ma'lumotlar kartochkasi uchun qatorlar: [yorliq, qiymat]
+$profileRows = [
+    ["To'liq ism",         (string) $user['name']],
+    ['Fakultet',           (string) ($user['faculty'] ?? '')],
+    ["Ta'lim yo'nalishi",  (string) ($user['direction'] ?? '')],
+    ['Guruh',              (string) ($user['group_name'] ?? '')],
+    ['HEMIS ID',           (string) ($user['hemis_id'] ?? '')],
+    ['Email',              (string) $user['email']],
+];
+
 // ------------------------------------------------------------
 // 3. SAHIFANI CHIZISH
 // ------------------------------------------------------------
@@ -78,9 +92,42 @@ $pageTitle = 'Mening kabinetim';
 require_once __DIR__ . '/includes/header.php';
 ?>
 
-<h1 class="text-2xl font-bold">Mening kabinetim</h1>
-<p class="text-slate-500 mb-5"><?= e($user['name']) ?> (<?= e($user['email']) ?>)</p>
+<h1 class="text-2xl font-bold mb-4">Mening kabinetim</h1>
 
+<!-- ====== TALABA MA'LUMOTLARI ====== -->
+<?php if (!$profileComplete): ?>
+    <div class="mb-3 border border-amber-300 bg-amber-50 text-amber-800 rounded-md px-4 py-3 text-sm">
+        Ma'lumotlaringiz to'liq emas. Kitob band qilish uchun
+        <a href="<?= e(url('profile.php')) ?>" class="underline font-semibold">ma'lumotlarni to'ldiring</a>.
+    </div>
+<?php endif; ?>
+
+<div class="bg-white border border-slate-200 rounded-xl p-4 mb-6">
+    <div class="flex items-center justify-between gap-3 mb-3">
+        <h2 class="text-lg font-bold">Mening ma'lumotlarim</h2>
+        <a href="<?= e(url('profile.php')) ?>"
+           class="bg-slate-700 hover:bg-slate-800 text-white text-xs rounded-md px-3 py-1.5">
+            Tahrirlash
+        </a>
+    </div>
+
+    <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+        <?php foreach ($profileRows as [$label, $value]): ?>
+            <div class="min-w-0">
+                <dt class="text-slate-500"><?= e($label) ?></dt>
+                <dd class="font-semibold break-words">
+                    <?php if ($value !== ''): ?>
+                        <?= e($value) ?>
+                    <?php else: ?>
+                        <span class="text-amber-600 font-normal">kiritilmagan</span>
+                    <?php endif; ?>
+                </dd>
+            </div>
+        <?php endforeach; ?>
+    </dl>
+</div>
+
+<!-- ====== BAND QILGAN KITOBLAR ====== -->
 <h2 class="text-lg font-bold mb-3">Band qilgan kitoblarim</h2>
 
 <?php if (!$reservations): ?>

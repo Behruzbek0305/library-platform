@@ -10,7 +10,11 @@
 --    3) reservations  – band qilishlar
 --    4) resources     – elektron resurslar (PDF yoki havola)
 --
+--  2-bosqich: users jadvaliga fakultet, yo'nalish, guruh va HEMIS ID qo'shildi.
+--
 --  Ishga tushirish: phpMyAdmin → "Import" bo'limidan shu faylni yuklang.
+--  DIQQAT: bu fayl bazani o'chirib qayta yaratadi. Mavjud bazani saqlab qolmoqchi
+--  bo'lsangiz, uning o'rniga migrations/002_talaba_malumotlari.sql ni ishlating.
 -- ============================================================
 
 -- ------------------------------------------------------------
@@ -35,17 +39,22 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 -- ------------------------------------------------------------
 -- 2. JADVAL: users (Foydalanuvchilar)
---    Maydonlar: ism, email, parol, rol (talaba yoki admin)
+--    Maydonlar: ism, email, fakultet, yo'nalish, guruh, HEMIS ID, parol, rol
 -- ------------------------------------------------------------
 CREATE TABLE `users` (
   `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT,          -- Foydalanuvchi ID raqami
-  `name`       VARCHAR(100) NOT NULL,                         -- Ism va familiya
+  `name`       VARCHAR(100) NOT NULL,                         -- To'liq ism (familiya, ism, sharif)
   `email`      VARCHAR(150) NOT NULL,                         -- Email (kirish uchun login)
+  `faculty`    VARCHAR(150) NULL,                             -- Fakultet (talabalar uchun)
+  `direction`  VARCHAR(150) NULL,                             -- Ta'lim yo'nalishi (talabalar uchun)
+  `group_name` VARCHAR(30)  NULL,                             -- Guruh (talabalar uchun)
+  `hemis_id`   VARCHAR(20)  NULL,                             -- HEMIS ID – keyingi integratsiya uchun
   `password`   VARCHAR(255) NOT NULL,                         -- password_hash() natijasi (ochiq parol SAQLANMAYDI)
   `role`       ENUM('talaba','admin') NOT NULL DEFAULT 'talaba', -- Rol: talaba yoki kutubxonachi (admin)
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,  -- Ro'yxatdan o'tgan vaqti
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_users_email` (`email`)                       -- Bitta email bilan faqat bitta akkaunt
+  UNIQUE KEY `uq_users_email` (`email`),                      -- Bitta email bilan faqat bitta akkaunt
+  UNIQUE KEY `uq_users_hemis` (`hemis_id`)                    -- Bitta HEMIS ID bilan faqat bitta akkaunt
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_unicode_ci;
@@ -124,11 +133,12 @@ CREATE TABLE `resources` (
 --      Parollar password_hash() (bcrypt) bilan xeshlangan:
 --        admin  → admin@kutubxona.uz  / parol: admin123
 --        talaba → talaba@kutubxona.uz / parol: talaba123
+--      Sinov talabasining fakulteti, yo'nalishi, guruhi va HEMIS ID'si to'ldirilgan.
 -- ------------------------------------------------------------
-INSERT INTO `users` (`id`, `name`, `email`, `password`, `role`) VALUES
-(1, 'Kutubxonachi', 'admin@kutubxona.uz',
+INSERT INTO `users` (`id`, `name`, `email`, `faculty`, `direction`, `group_name`, `hemis_id`, `password`, `role`) VALUES
+(1, 'Kutubxonachi', 'admin@kutubxona.uz', NULL, NULL, NULL, NULL,
     '$2y$10$w4q0/k82iJbbF5dSuix7KupmGuj9mHqOtAIux1IGku0KuLQcH3f6e', 'admin'),
-(2, 'Sinov Talaba', 'talaba@kutubxona.uz',
+(2, 'Talabayev Sinov', 'talaba@kutubxona.uz', 'Axborot texnologiyalari', 'Dasturiy injiniring', 'DI-21-01', '123456789012',
     '$2y$10$AvUe7Mqo8JUC0fRoMaivDe0m0.x32v7U73tS.wwBt6XAqAo2swam2', 'talaba');
 
 -- ------------------------------------------------------------

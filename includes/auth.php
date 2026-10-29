@@ -9,6 +9,9 @@
  *  (admin/ papkasidagi fayllarda: __DIR__ . '/../includes/auth.php')
  *
  *  Bu fayl o'zi config/db.php va includes/functions.php ni ham ulaydi.
+ *
+ *  2-bosqich: currentUser() endi talabaning fakulteti, yo'nalishi,
+ *  guruhi va HEMIS ID'sini ham qaytaradi.
  * ============================================================
  */
 
@@ -51,7 +54,10 @@ function currentUser(): ?array
     $user = null;
 
     if (!empty($_SESSION['user_id'])) {
-        $stmt = $pdo->prepare('SELECT id, name, email, role FROM users WHERE id = :id LIMIT 1');
+        $stmt = $pdo->prepare(
+            'SELECT id, name, email, role, faculty, direction, group_name, hemis_id
+             FROM users WHERE id = :id LIMIT 1'
+        );
         $stmt->execute([':id' => $_SESSION['user_id']]);
         $row = $stmt->fetch();
 
