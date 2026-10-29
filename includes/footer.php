@@ -17,6 +17,10 @@
  * ============================================================
  */
 
+declare(strict_types=1);
+
+require_once __DIR__ . '/book_helpers.php';
+
 // Oyna ichidagi tugmalar foydalanuvchi roliga qarab o'zgaradi
 $footerUser = currentUser();
 $modalRole  = $footerUser === null ? 'guest' : ($footerUser['role'] === 'talaba' ? 'student' : 'admin');
