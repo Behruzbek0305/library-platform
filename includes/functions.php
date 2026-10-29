@@ -35,7 +35,7 @@ function url(string $path = ''): string
  * Boshqa sahifaga yo'naltiradi va skriptni to'xtatadi.
  * Misol: redirect('index.php');
  */
-function redirect(string $path): void
+function redirect(string $path): never
 {
     header('Location: ' . url($path));
     exit;

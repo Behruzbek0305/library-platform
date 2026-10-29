@@ -55,6 +55,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     try {
+        $stmt    = null;
+        $message = '';
+
         if ($action === 'approve') {
             $stmt = $pdo->prepare("UPDATE reservations SET status = 'tasdiqlandi' WHERE id = :id AND status = 'kutilmoqda'");
             $stmt->execute([':id' => $id]);
@@ -73,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect($backUrl);
         }
 
-        if ($stmt->rowCount() > 0) {
+        if ($stmt !== null && $stmt->rowCount() > 0) {
             setFlash('success', $message);
         } else {
             setFlash('error', "Bu amalni bajarib bo'lmadi (holat allaqachon o'zgargan bo'lishi mumkin).");
