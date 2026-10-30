@@ -6,12 +6,18 @@
  *  kutubxonachi band qilishlar ro'yxatini ko'radi va tasdiqlaydi.
  *
  *  Amallar (hammasi POST + CSRF):
- *    approve – "kutilmoqda"  → "tasdiqlandi"
- *    return  – "tasdiqlandi" → "qaytarildi"  (kitob qaytarildi, nusxa yana bo'sh)
- *    reject  – "kutilmoqda" → "rad_etildi"  (yozuv saqlanadi, talaba ham ko'radi)
+ *    approve – "kutilmoqda"  → "tasdiqlandi"  (picked_up_at yoziladi)
+ *    return  – "tasdiqlandi" → "qaytarildi"   (returned_at yoziladi, nusxa yana bo'sh)
+ *    reject  – "kutilmoqda" → "rad_etildi"   (yozuv saqlanadi, talaba ham ko'radi)
  *
  *  2-bosqich: har bir band qilishda talabaning HEMIS ID'si, fakulteti,
  *  yo'nalishi va guruhi ko'rsatiladi (kitobni kimga berishni aniqlash uchun).
+ *
+ *  4-bosqich: kitob berilgan (picked_up_at) va qaytarilgan (returned_at)
+ *  vaqtlar bazaga yoziladi va jadvalda ko'rsatiladi.
+ *  Bo'sh nusxalar soni alohida ustunda saqlanmaydi: u includes/book_helpers.php
+ *  dagi BOOK_SELECT orqali har safar hisoblanadi, shuning uchun "qaytarildi"
+ *  holati yozilishi bilan nusxa o'zi bo'shaydi.
  * ============================================================
  */
 
@@ -58,19 +64,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt    = null;
         $message = '';
 
+        // Joriy vaqt PHP'dan olinadi (Asia/Tashkent, functions.php da o'rnatilgan).
+        // pickup_deadline ham shu vaqt mintaqasi bilan yozilgan, shuning uchun
+        // MySQL'ning NOW() vaqt mintaqasi bilan chalkashlik bo'lmaydi.
+        $now = date('Y-m-d H:i:s');
+
         if ($action === 'approve') {
-            $stmt = $pdo->prepare("UPDATE reservations SET status = 'tasdiqlandi' WHERE id = :id AND status = 'kutilmoqda'");
-            $stmt->execute([':id' => $id]);
-            $message = 'Band qilish tasdiqlandi.';
+            // Tasdiqlash: kitob talabaga berildi – olib ketilgan vaqt yoziladi.
+            // "AND status = 'kutilmoqda'" sharti tugma ikki marta bosilsa ham vaqtni qayta yozmaydi.
+            $stmt = $pdo->prepare(
+                "UPDATE reservations
+                 SET status = 'tasdiqlandi', picked_up_at = :now
+                 WHERE id = :id AND status = 'kutilmoqda'"
+            );
+            $stmt->execute([':now' => $now, ':id' => $id]);
+            $message = 'Band qilish tasdiqlandi. Kitob berilgan vaqt saqlandi.';
+
         } elseif ($action === 'return') {
-            $stmt = $pdo->prepare("UPDATE reservations SET status = 'qaytarildi' WHERE id = :id AND status = 'tasdiqlandi'");
-            $stmt->execute([':id' => $id]);
-            $message = 'Kitob qaytarildi deb belgilandi.';
+            // Qaytarildi: qaytarilgan vaqt yoziladi.
+            // Nusxa yana bo'sh bo'ladi: BOOK_SELECT faqat "kutilmoqda" va "tasdiqlandi"
+            // holatlarini band deb hisoblaydi, shuning uchun alohida hisoblagich kerak emas.
+            $stmt = $pdo->prepare(
+                "UPDATE reservations
+                 SET status = 'qaytarildi', returned_at = :now
+                 WHERE id = :id AND status = 'tasdiqlandi'"
+            );
+            $stmt->execute([':now' => $now, ':id' => $id]);
+            $message = "Kitob qaytarildi deb belgilandi. Nusxa yana bo'sh.";
+
         } elseif ($action === 'reject') {
             // O'chirmaymiz, holatini "rad_etildi" qilamiz – talaba ham, kutubxonachi ham ko'radi
             $stmt = $pdo->prepare("UPDATE reservations SET status = 'rad_etildi' WHERE id = :id AND status = 'kutilmoqda'");
             $stmt->execute([':id' => $id]);
             $message = 'Band qilish rad etildi.';
+
         } else {
             setFlash('error', "Noma'lum amal.");
             redirect($backUrl);
@@ -106,8 +133,10 @@ try {
     )->fetch();
 
     // Band qilishlar: avval kutilayotganlar, keyin tasdiqlanganlar, oxirida qaytarilganlar
-    // (talabaning fakulteti, yo'nalishi, guruhi va HEMIS ID'si ham olinadi)
+    // (talabaning fakulteti, yo'nalishi, guruhi va HEMIS ID'si ham olinadi;
+    //  4-bosqich: picked_up_at, returned_at va is_offline ham olinadi)
     $sql = 'SELECT r.id, r.reserved_date, r.pickup_days, r.pickup_deadline, r.status,
+                   r.picked_up_at, r.returned_at, r.is_offline,
                    u.name AS user_name, u.email AS user_email,
                    u.faculty, u.direction, u.group_name, u.hemis_id,
                    b.id AS book_id, b.title AS book_title
@@ -139,6 +168,17 @@ $tabs = [
     'qaytarildi'  => 'Qaytarilgan',
     'rad_etildi'  => 'Rad etilgan',
 ];
+
+/**
+ * Sana-vaqtni "30.10.2026 13:05" ko'rinishida chiqaradi (bo'sh bo'lsa bo'sh matn).
+ */
+function formatDateTime(?string $value): string
+{
+    if ($value === null || $value === '') {
+        return '';
+    }
+    return date('d.m.Y H:i', strtotime($value));
+}
 
 // ------------------------------------------------------------
 // 3. SAHIFANI CHIZISH
@@ -236,6 +276,15 @@ require_once __DIR__ . '/../includes/header.php';
                                     </div>
                                 <?php endif; ?>
                             <?php endif; ?>
+                            <?php if (!empty($r['picked_up_at'])): ?>
+                                <div class="text-green-700 mt-0.5">Berilgan: <b><?= e(formatDateTime((string) $r['picked_up_at'])) ?></b></div>
+                            <?php endif; ?>
+                            <?php if (!empty($r['returned_at'])): ?>
+                                <div class="text-slate-700 mt-0.5">Qaytarilgan: <b><?= e(formatDateTime((string) $r['returned_at'])) ?></b></div>
+                            <?php endif; ?>
+                            <?php if ((int) $r['is_offline'] === 1): ?>
+                                <div class="mt-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-medium">Offlayn berilgan</span></div>
+                            <?php endif; ?>
                         </td>
                         <td class="px-4 py-3"><?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? '')) ?></td>
                         <td class="px-4 py-3">
@@ -319,6 +368,15 @@ require_once __DIR__ . '/../includes/header.php';
                                 <?php endif; ?>
                             </div>
                         <?php endif; ?>
+                    <?php endif; ?>
+                    <?php if (!empty($r['picked_up_at'])): ?>
+                        <div class="text-green-700">Berilgan: <b><?= e(formatDateTime((string) $r['picked_up_at'])) ?></b></div>
+                    <?php endif; ?>
+                    <?php if (!empty($r['returned_at'])): ?>
+                        <div class="text-slate-700">Qaytarilgan: <b><?= e(formatDateTime((string) $r['returned_at'])) ?></b></div>
+                    <?php endif; ?>
+                    <?php if ((int) $r['is_offline'] === 1): ?>
+                        <div><span class="inline-block px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-medium">Offlayn berilgan</span></div>
                     <?php endif; ?>
                 </div>
 

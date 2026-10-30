@@ -5,6 +5,9 @@
  *  Ko'rsatadi: talabaning ma'lumotlari (2-bosqich), band qilgan kitoblari va holati.
  *  Holati "kutilmoqda" bo'lganini bekor qilish mumkin.
  *  (Texnik topshiriq: funksional talab №5, sahifa "Mening kabinetim")
+ *
+ *  4-bosqich: kitob qachon berilgani (picked_up_at) va qachon
+ *  qaytarilgani (returned_at) ham ko'rsatiladi.
  * ============================================================
  */
 
@@ -17,6 +20,17 @@ require_once __DIR__ . '/includes/student_helpers.php';
 // Faqat tizimga kirgan talabalar uchun (kutubxonachi kira olmaydi)
 requireStudent();
 $user = currentUser();
+
+/**
+ * Sana-vaqtni "30.10.2026 13:05" ko'rinishida chiqaradi (bo'sh bo'lsa bo'sh matn).
+ */
+function formatDateTime(?string $value): string
+{
+    if ($value === null || $value === '') {
+        return '';
+    }
+    return date('d.m.Y H:i', strtotime($value));
+}
 
 // ------------------------------------------------------------
 // 1. BEKOR QILISH (POST)
@@ -55,11 +69,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // ------------------------------------------------------------
 // 2. FOYDALANUVCHINING BAND QILISHLARINI OLISH
+//    (4-bosqich: picked_up_at va returned_at ham olinadi)
 // ------------------------------------------------------------
 $reservations = [];
 try {
     $stmt = $pdo->prepare(
         'SELECT r.id, r.reserved_date, r.pickup_days, r.pickup_deadline, r.status,
+                r.picked_up_at, r.returned_at,
                 b.id AS book_id, b.title, b.author
          FROM reservations r
          JOIN books b ON b.id = r.book_id
@@ -176,6 +192,12 @@ require_once __DIR__ . '/includes/header.php';
                                     </div>
                                 <?php endif; ?>
                             <?php endif; ?>
+                            <?php if (!empty($r['picked_up_at'])): ?>
+                                <div class="text-green-700 mt-0.5">Olgan vaqtingiz: <b><?= e(formatDateTime((string) $r['picked_up_at'])) ?></b></div>
+                            <?php endif; ?>
+                            <?php if (!empty($r['returned_at'])): ?>
+                                <div class="text-slate-700 mt-0.5">Qaytargan vaqtingiz: <b><?= e(formatDateTime((string) $r['returned_at'])) ?></b></div>
+                            <?php endif; ?>
                         </td>
                         <td class="px-4 py-3"><?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? '')) ?></td>
                         <td class="px-4 py-3 text-right">
@@ -227,6 +249,12 @@ require_once __DIR__ . '/includes/header.php';
                                 <?php endif; ?>
                             </div>
                         <?php endif; ?>
+                    <?php endif; ?>
+                    <?php if (!empty($r['picked_up_at'])): ?>
+                        <div class="text-green-700">Olgan vaqtingiz: <b><?= e(formatDateTime((string) $r['picked_up_at'])) ?></b></div>
+                    <?php endif; ?>
+                    <?php if (!empty($r['returned_at'])): ?>
+                        <div class="text-slate-700">Qaytargan vaqtingiz: <b><?= e(formatDateTime((string) $r['returned_at'])) ?></b></div>
                     <?php endif; ?>
                 </div>
 
