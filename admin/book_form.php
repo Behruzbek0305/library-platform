@@ -93,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($isEdit && $copies !== false && $copies >= 1) {
             $stmt = $pdo->prepare(
                 "SELECT COUNT(*) FROM reservations
-                 WHERE book_id = :id AND status IN ('kutilmoqda', 'tasdiqlandi')"
+                 WHERE book_id = :id AND status IN ('kutilmoqda', 'tasdiqlandi', 'berilgan')"
             );
             $stmt->execute([':id' => $id]);
             $active = (int) $stmt->fetchColumn();
@@ -150,27 +150,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (!$errors) {
-            try {
-                // 6-bosqich: available_copies ustuni bormi? (migratsiya
-                // hali ishga tushirilmagan bo'lsa INSERT/UPDATE shu ustunsiz bajariladi)
+                try {
+                // 6-bosqich: available_copies ustuni bormi?
                 $col = $pdo->query(
                     "SELECT COUNT(*) FROM information_schema.COLUMNS
-                      WHERE TABLE_SCHEMA = DATABASE()
+                    WHERE TABLE_SCHEMA = DATABASE()
                         AND TABLE_NAME   = 'books'
                         AND COLUMN_NAME  = 'available_copies'"
                 )->fetchColumn();
                 $hasAvailable = (int) $col > 0;
 
                 if ($isEdit) {
-                    // Yangi rasm yuklangan bo'lsa almashtiramiz, bo'lmasa eskisi qoladi
+                    // DIQQAT: har bir nomli parametr so'rovda faqat BIR marta uchrashi kerak
+                    // (ATTR_EMULATE_PREPARES = false bo'lgani uchun), shu sababli :copies_avail alohida.
                     $stmt = $pdo->prepare(
                         'UPDATE books
-                         SET title = :title, author = :author, category = :category,
-                             description = :description, copies = :copies,
-                             cover_image = :cover_image'
+                        SET title = :title, author = :author, category = :category,
+                            description = :description, copies = :copies,
+                            cover_image = :cover_image'
                             . ($hasAvailable
-                               ? ', available_copies = GREATEST(0, CAST(:copies AS SIGNED) - :activeCount)'
-                               : '')
+                            ? ', available_copies = GREATEST(0, :copies_avail - :active_count)'
+                            : '')
                             . ' WHERE id = :id'
                     );
                     $params = [
@@ -183,8 +183,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':id'          => $id,
                     ];
                     if ($hasAvailable) {
-                        // Bo'sh = yangi jami nusxa − hozir bandlar (manfiy emas)
-                        $params[':activeCount'] = $active;
+                        // Bo'sh = yangi jami nusxa − hozir band/talabada turganlar (manfiy emas)
+                        $params[':copies_avail'] = $copies;
+                        $params[':active_count'] = $active;
                     }
                     $stmt->execute($params);
 
@@ -195,30 +196,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     setFlash('success', "Kitob ma'lumotlari yangilandi.");
                 } else {
-                    if ($hasAvailable) {
-                        $stmt = $pdo->prepare(
-                            'INSERT INTO books (title, author, category, description, cover_image, copies, available_copies)
-                             VALUES (:title, :author, :category, :description, :cover_image, :copies, :copies)'
-                        );
-                    } else {
-                        $stmt = $pdo->prepare(
-                            'INSERT INTO books (title, author, category, description, cover_image, copies)
-                             VALUES (:title, :author, :category, :description, :cover_image, :copies)'
-                        );
-                    }
-                    $stmt->execute([
+                    $params = [
                         ':title'       => $form['title'],
                         ':author'      => $form['author'],
                         ':category'    => $form['category'],
                         ':description' => $form['description'] !== '' ? $form['description'] : null,
                         ':cover_image' => $newCoverPath,
                         ':copies'      => $copies,
-                    ]);
+                    ];
+
+                    if ($hasAvailable) {
+                        $stmt = $pdo->prepare(
+                            'INSERT INTO books (title, author, category, description, cover_image, copies, available_copies)
+                            VALUES (:title, :author, :category, :description, :cover_image, :copies, :copies_avail)'
+                        );
+                        // Yangi kitobda hamma nusxa bo'sh
+                        $params[':copies_avail'] = $copies;
+                    } else {
+                        $stmt = $pdo->prepare(
+                            'INSERT INTO books (title, author, category, description, cover_image, copies)
+                            VALUES (:title, :author, :category, :description, :cover_image, :copies)'
+                        );
+                    }
+                    $stmt->execute($params);
 
                     setFlash('success', "Yangi kitob qo'shildi.");
                 }
 
                 redirect('admin/books.php');
+
 
             } catch (PDOException $ex) {
                 // Baza xatosi bo'lsa, yuklangan rasm yetim qolmasligi uchun o'chiramiz
