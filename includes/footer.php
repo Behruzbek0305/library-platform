@@ -70,10 +70,101 @@ $modalRole  = $footerUser === null ? 'guest' : ($footerUser['role'] === 'talaba'
                         <a href="<?= e(url('register.php')) ?>" class="text-blue-600 hover:underline">ro'yxatdan o'ting</a>.
                     </p>
 
-                    <!-- Kutubxonachi -->
-                    <p data-state="admin" class="hidden text-sm text-slate-500">
-                        Kitoblarni faqat talabalar band qila oladi.
-                    </p>
+                    <!-- ====== Kutubxonachi: avvalgi kulrang "Faqat talabalar band qila oladi"
+                         tugmasi o'rniga yashil "Offlayn Registratsiya qilish" tugmasi ====== -->
+                    <div data-state="admin" class="hidden space-y-3">
+                        <button type="button" id="bookModalOfflineBtn"
+                                class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold rounded-md px-5 py-2.5">
+                            Offlayn Registratsiya qilish
+                        </button>
+
+                        <!-- Bo'sh nusxa bo'lmasa – ogohlantirish (forma baribir ochiladi,
+                             2-bosqichda server tekshiradi) -->
+                        <p id="bookModalOfflineWarn" class="hidden text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                            Hozir bo'sh nusxa ko'rinmayapti. Baribir berilsa, keyinroq qaytarilgan deb belgilang.
+                        </p>
+                    </div>
+
+                    <!-- ====== Kutubxonachi: kitob modalining ichidagi talaba ma'lumotlari formasi ======
+                          POST → admin/process-offline.php (book_id bilan).
+                          JS bu blokni ochib/yopadi va book_id ni to'ldiradi. -->
+                    <div data-state="offline" class="hidden border border-green-200 bg-green-50/60 rounded-lg p-3">
+                        <div class="flex items-start justify-between gap-2">
+                            <h3 class="font-bold text-green-800 leading-snug">Kitobni talabaga berish (offlayn)</h3>
+                            <button type="button" id="bookModalOfflineBack" data-offline-back aria-label="Orqaga"
+                                    class="shrink-0 rounded-full w-7 h-7 text-slate-500 hover:bg-white">✕</button>
+                        </div>
+                        <p class="text-xs text-slate-600 mt-1 mb-3">
+                            Talaba onlayn band qilmagan – kutubxonchi uni shu yerda qo'lda kiritadi.
+                        </p>
+
+                        <form method="post" action="<?= e(url('admin/process-offline.php')) ?>"
+                              id="bookModalOfflineForm" data-offline-form class="space-y-3">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="book_id" id="bookModalOfflineBookId" value="">
+                            <input type="hidden" name="from" value="modal">
+
+                            <div class="space-y-1">
+                                <label for="off_hemis_modal" class="block text-sm font-semibold text-slate-700">
+                                    Talabaning HEMIS ID si
+                                </label>
+                                <input type="text" id="off_hemis_modal" name="hemis_id" required
+                                       maxlength="20" inputmode="numeric" autocomplete="off"
+                                       placeholder="Masalan: 123456789012" class="<?= e(offlineFieldClass()) ?>">
+                                <p class="text-xs text-slate-500">Faqat raqam (6 tadan 20 tagacha).</p>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div class="space-y-1">
+                                    <label for="off_name_modal" class="block text-sm font-semibold text-slate-700">
+                                        Talaba FIO si
+                                    </label>
+                                    <input type="text" id="off_name_modal" name="student_name" required
+                                           maxlength="100" autocomplete="off"
+                                           placeholder="Karimov Aziz Bahodirovich" class="<?= e(offlineFieldClass()) ?>">
+                                </div>
+
+                                <div class="space-y-1">
+                                    <label for="off_email_modal" class="block text-sm font-semibold text-slate-700">
+                                        Email adresi
+                                    </label>
+                                    <input type="email" id="off_email_modal" name="student_email" required
+                                           maxlength="150" autocomplete="off"
+                                           placeholder="talaba@universitet.uz" class="<?= e(offlineFieldClass()) ?>">
+                                </div>
+
+                                <div class="space-y-1">
+                                    <label for="off_faculty_modal" class="block text-sm font-semibold text-slate-700">
+                                        Fakulteti
+                                    </label>
+                                    <input type="text" id="off_faculty_modal" name="faculty" required
+                                           maxlength="150" autocomplete="off"
+                                           placeholder="Axborot texnologiyalari" class="<?= e(offlineFieldClass()) ?>">
+                                </div>
+
+                                <div class="space-y-1">
+                                    <label for="off_group_modal" class="block text-sm font-semibold text-slate-700">
+                                        Guruhi
+                                    </label>
+                                    <input type="text" id="off_group_modal" name="group_name" required
+                                           maxlength="30" autocomplete="off"
+                                           placeholder="DI-21-01" class="<?= e(offlineFieldClass()) ?>">
+                                </div>
+                            </div>
+
+                            <?php renderOfflineDaysSelect('off_loan_days_modal', 'loan_days', 3); ?>
+
+                            <button type="submit"
+                                    class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold rounded-md px-5 py-2.5">
+                                Talabaga berish
+                            </button>
+
+                            <button type="button" data-offline-back
+                                    class="w-full text-sm text-slate-600 hover:text-slate-800 py-1">
+                                ← Orqaga
+                            </button>
+                        </form>
+                    </div>
 
                     <!-- Talaba: allaqachon band qilgan -->
                     <p data-state="booked"
