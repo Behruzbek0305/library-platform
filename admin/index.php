@@ -177,6 +177,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Joriy vaqt PHP'dan olinadi (Asia/Tashkent, functions.php da o'rnatilgan).
         $now = date('Y-m-d H:i:s');
 
+        // 6-bosqich: available_copies ni to'g'ri boshqarish uchun
+        // band qilishning kitob ID sini oldindan olamiz.
+        $stmtBook = $pdo->prepare('SELECT book_id FROM reservations WHERE id = :id');
+        $stmtBook->execute([':id' => $id]);
+        $resBookId = (int) ($stmtBook->fetchColumn() ?: 0);
+
         if ($action === 'approve') {
             // Tasdiqlash: kitob talabaga berildi – olib ketilgan vaqt yoziladi
             $stmt = $pdo->prepare(
@@ -192,16 +198,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $pdo->prepare(
                 "UPDATE reservations
                  SET status = 'qaytarildi', returned_at = :now
-                 WHERE id = :id AND status = 'tasdiqlandi'"
+                 WHERE id = :id AND status IN ('tasdiqlandi', 'berilgan')"
             );
             $stmt->execute([':now' => $now, ':id' => $id]);
             $message = "Kitob qaytarildi deb belgilandi. Nusxa yana bo'sh.";
+
+            // REAL-TIME (6-bosqich): haqiqatan qaytgan nusxa bo'shlar soniga qo'shiladi
+            if ($stmt->rowCount() > 0 && $resBookId > 0) {
+                incrementAvailableCopies($pdo, $resBookId);
+            }
 
         } elseif ($action === 'reject') {
             // O'chirmaymiz, holatini "rad_etildi" qilamiz – talaba ham, kutubxonachi ham ko'radi
             $stmt = $pdo->prepare("UPDATE reservations SET status = 'rad_etildi' WHERE id = :id AND status = 'kutilmoqda'");
             $stmt->execute([':id' => $id]);
             $message = 'Band qilish rad etildi.';
+
+            // REAL-TIME (6-bosqich): rad etilgan band bo'sh nusxani qaytaradi
+            if ($stmt->rowCount() > 0 && $resBookId > 0) {
+                incrementAvailableCopies($pdo, $resBookId);
+            }
 
         } else {
             setFlash('error', "Noma'lum amal.");

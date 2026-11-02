@@ -38,19 +38,96 @@ function categoryStyle(string $category): array
 
 // ------------------------------------------------------------
 // 2. KITOBLARNI TANLASH UCHUN SQL SHABLONI
-//    "available" – bo'sh nusxalar soni:
-//    jami nusxalar minus (kutilmoqda + tasdiqlandi) holatidagi band qilishlar.
-//    CAST ... SIGNED va GREATEST – natija hech qachon manfiy bo'lmasligi uchun.
-//    Shablonga WHERE / ORDER BY qismini o'zingiz qo'shasiz.
+//    "available" – bo'sh nusxalar soni (6-bosqich):
+//    endi bu SON bazada books.available_copies ustunida AMALDA saqlanadi:
+//      * kitob berilganda (offlayn yoki onlayn) 1 taga kamaytiriladi,
+//      * «Qaytarildi» deb belgilanganda 1 taga qo'shiladi.
+//    IF(...IS NULL...) qismi – migratsiya (006_available_copies.sql)
+//    hali ishga tushirilmagan eski bazalarda ham sayt ishlashi uchun
+//    dinamik hisoblab qo'yiladi (fallback). Shablonga WHERE / ORDER BY
+//    qismini o'zingiz qo'shasiz.
 // ------------------------------------------------------------
 const BOOK_SELECT = "
     SELECT b.*,
-           GREATEST(0, CAST(b.copies AS SIGNED) - (
-               SELECT COUNT(*) FROM reservations r
-               WHERE r.book_id = b.id AND r.status IN ('kutilmoqda', 'tasdiqlandi')
-           )) AS available
+           IF(b.available_copies IS NULL,
+              GREATEST(0, CAST(b.copies AS SIGNED) - (
+                  SELECT COUNT(*) FROM reservations r
+                  WHERE r.book_id = b.id AND r.status IN ('kutilmoqda', 'tasdiqlandi', 'berilgan')
+              )),
+              LEAST(CAST(b.available_copies AS SIGNED),
+                    GREATEST(0, CAST(b.copies AS SIGNED) - (
+                        SELECT COUNT(*) FROM reservations r
+                        WHERE r.book_id = b.id AND r.status IN ('kutilmoqda', 'tasdiqlandi', 'berilgan')
+                    )))
+           ) AS available
     FROM books b
 ";
+
+/**
+ * Kitobning bo'sh nusxalarini 1 taga KAMAYTIRISH (real-time).
+ * So'rov sharti: UPDATE books SET available_copies = available_copies - 1
+ *                WHERE id = ? AND available_copies > 0
+ *
+ * @return bool true – kamaytirildi; false – bo'sh nusxa qolmagan
+ *              (yoki ustun hali yo'q – eski baza, unda dinamik hisob ishlaydi).
+ */
+function decrementAvailableCopies(PDO $pdo, int $bookId): bool
+{
+    static $hasColumn = null;
+
+    if ($hasColumn === null) {
+        $col = $pdo->query(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME   = 'books'
+                AND COLUMN_NAME  = 'available_copies'"
+        )->fetchColumn();
+        $hasColumn = (int) $col > 0;
+    }
+
+    if (!$hasColumn) {
+        return true; // migratsiya qilinmagan – BOOK_SELECT dinamik hisoblaydi
+    }
+
+    $stmt = $pdo->prepare(
+        'UPDATE books
+            SET available_copies = available_copies - 1
+          WHERE id = :id AND available_copies > 0'
+    );
+    $stmt->execute([':id' => $bookId]);
+
+    return $stmt->rowCount() > 0;
+}
+
+/**
+ * Kitobning bo'sh nusxalarini 1 taga QO'SHISH (kitob haqiqatan qaytganda).
+ * copies (jami nusxa) dan oshib ketmasligi uchun shart qo'yilgan.
+ */
+function incrementAvailableCopies(PDO $pdo, int $bookId): void
+{
+    static $hasColumn = null;
+
+    if ($hasColumn === null) {
+        $col = $pdo->query(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME   = 'books'
+                AND COLUMN_NAME  = 'available_copies'"
+        )->fetchColumn();
+        $hasColumn = (int) $col > 0;
+    }
+
+    if (!$hasColumn) {
+        return; // ustun yo'q – dinamik hisob baribir to'g'ri ko'rsatadi
+    }
+
+    $stmt = $pdo->prepare(
+        'UPDATE books
+            SET available_copies = available_copies + 1
+          WHERE id = :id AND available_copies < copies'
+    );
+    $stmt->execute([':id' => $bookId]);
+}
 
 // ------------------------------------------------------------
 // 2.1. JORIY TALABA BAND QILGAN KITOBLAR ID'LARI
@@ -77,7 +154,7 @@ function userBookedIds(): array
     try {
         $stmt = $pdo->prepare(
             "SELECT DISTINCT book_id FROM reservations
-             WHERE user_id = :user_id AND status IN ('kutilmoqda', 'tasdiqlandi')"
+             WHERE user_id = :user_id AND status IN ('kutilmoqda', 'tasdiqlandi', 'berilgan')"
         );
         $stmt->execute([':user_id' => $user['id']]);
         $ids = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
@@ -233,8 +310,11 @@ function deleteCoverFile(?string $relativePath): void
 
 // ------------------------------------------------------------
 // 4. BAND QILISH HOLATI BELGISI (kabinet va admin panelda ishlatiladi)
+//    $deadline – olib ketish muddati (kutilmoqda uchun)
+//    $dueDate  – qaytarish muddati (berilgan uchun; o'tsa KECHIKISH hisoblanadi,
+//                kitob baribir talaba qo'lida qolaveradi)
 // ------------------------------------------------------------
-function statusBadge(string $status, ?string $deadline = null): string
+function statusBadge(string $status, ?string $deadline = null, ?string $dueDate = null): string
 {
     if ($status === 'rad_etildi') {
         $isOverdue = $deadline !== null && $deadline !== '' && strtotime($deadline) < time();
@@ -242,8 +322,21 @@ function statusBadge(string $status, ?string $deadline = null): string
         return '<span class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">' . e($label) . '</span>';
     }
 
+    // "Berilgan" holatida muddat o'tgan bo'lsa – kechikish belgisi chiqadi.
+    // DIQQAT: bu kitobni avtomatik "qaytarildi" DEMAYDI! Kitob talaba
+    // qo'lida turibveradi, kutubxonachi uni faqat fizik qabul qilganda
+    // «Qaytarildi» tugmasini bosadi.
+    if ($status === 'berilgan') {
+        $overdue = $dueDate !== null && $dueDate !== '' && strtotime($dueDate) < time();
+        if ($overdue) {
+            return '<span class="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">⏰ Berilgan (muddat o\'tdi)</span>'
+                 . '<span class="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">Kechikkan</span>';
+        }
+        return '<span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Berilgan</span>';
+    }
+
     return match ($status) {
-        'tasdiqlandi' => '<span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Tasdiqlandi</span>',
+        'tasdiqlandi' => '<span class="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">Tasdiqlandi</span>',
         'qaytarildi'  => '<span class="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-medium">Qaytarildi</span>',
         default       => '<span class="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Kutilmoqda</span>',
     };
@@ -274,15 +367,40 @@ function expireOverdueReservations(PDO $pdo): int
     $alreadyRun = true;
 
     try {
+        // 1) Olib olish muddati o'tgan "kutilmoqda" bandlar rad etiladi.
+        //    Ular avval books.available_copies ni kamaytirgan bo'lgani uchun
+        //    har bir rad etilgan bandga bitta bo'sh nusxa QAYTARILADI (6-bosqich).
         $stmt = $pdo->prepare(
-            "UPDATE reservations
-             SET status = 'rad_etildi'
+            "SELECT id, book_id FROM reservations
              WHERE status = 'kutilmoqda'
                AND pickup_deadline IS NOT NULL
                AND pickup_deadline < NOW()"
         );
         $stmt->execute();
-        return (int) $stmt->rowCount();
+        $expired = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $count = 0;
+        if ($expired) {
+            $upd = $pdo->prepare(
+                "UPDATE reservations
+                 SET status = 'rad_etildi'
+                 WHERE id = :id AND status = 'kutilmoqda'"
+            );
+            foreach ($expired as $row) {
+                $upd->execute([':id' => (int) $row['id']]);
+                if ($upd->rowCount() > 0) {
+                    $count++;
+                    incrementAvailableCopies($pdo, (int) $row['book_id']);
+                }
+            }
+        }
+
+        // 2) "tasdiqlandi/berilgan" holatdagi kitoblar muddati o'tsa ham
+        //    AVTOMATIK qaytarilmaydi – ular talaba qo'lida turibdi deb
+        //    hisoblanadi va available_copies dagi o'rinlari bandligicha qoladi.
+        //    Kitob faqat kutubxonachi «Qaytarildi» tugmasini bossa bo'shaydi!
+
+        return $count;
     } catch (PDOException $ex) {
         error_log('[Kutubxona-ARM] Muddati o\'tgan band qilishlarni yangilashda xatolik: ' . $ex->getMessage());
         return 0;
@@ -292,8 +410,11 @@ function expireOverdueReservations(PDO $pdo): int
 /**
  * Qolgan vaqtni hisoblaydi va inson o'qiy oladigan matn qaytaradi.
  * Masalan: "1 kun 4 soat qoldi", "14 soat qoldi", "Muddati o'tgan".
+ * $overdueLabel – muddat o'tganda chiqadigan matn. Standart: "Muddati o'tgan".
+ * Qaytarish muddati uchun "Kechikkan" ma'nosidagi matn beriladi – chunki
+ * kitob hali talaba qo'lida (u avtomatik "qaytarildi" bo'lmaydi).
  */
-function formatRemainingTime(?string $deadline): array
+function formatRemainingTime(?string $deadline, string $expiredText = "Muddati o'tgan"): array
 {
     if ($deadline === null || $deadline === '') {
         return ['text' => '', 'expired' => false, 'urgent' => false];
@@ -305,7 +426,7 @@ function formatRemainingTime(?string $deadline): array
 
     if ($diff <= 0) {
         return [
-            'text'    => "Muddati o'tgan",
+            'text'    => $expiredText,
             'expired' => true,
             'urgent'  => false,
         ];
@@ -390,13 +511,18 @@ function offlineFieldClass(): string
 /**
  * Oflayn berish uchun tanlash maydoni: 1 / 2 / 3 / 5 / 10 kun.
  * $name – POST maydoni nomi (process-offline.php shu nomdan o'qiydi).
+ * MUHIM: bu – kitobning QAYTARISH muddati. Muddat tugasa ham kitob
+ * avtomatik "qaytarildi" bo'LMAYDI: kutubxonachi kitobni qo'lda
+ * qabul qilib, admin panelda «Qaytarildi» tugmasini bosgandagina
+ * holat o'zgaradi. Shuning uchun bu yerda hech qanday avtomatik
+ * belgilash haqida yozilmaydi.
  */
 function renderOfflineDaysSelect(string $selectId, string $name = 'loan_days', int $default = 3): void
 {
     ?>
     <div class="space-y-1">
         <label for="<?= e($selectId) ?>" class="block text-sm font-semibold text-slate-700">
-            Necha kunga berilmoqda?
+            Necha kunga berilmoqda? (Qaytarish muddati)
         </label>
         <select id="<?= e($selectId) ?>" name="<?= e($name) ?>" required
                 class="<?= e(offlineFieldClass()) ?>">
@@ -407,7 +533,10 @@ function renderOfflineDaysSelect(string $selectId, string $name = 'loan_days', i
             <?php endforeach; ?>
         </select>
         <p class="text-xs text-slate-500">
-            ⚠️ Muddat tugagach kutubxonachi «Qaytarildi» deb belgilaydi.
+            ⏰ Kitob shu muddat ichida qaytarilishi kerak. Muddat o'tsa, band qilish
+            admin panelda <b>«Kechikkan»</b> deb ko'rsatiladi – lekin kitob baribir
+            talaba qo'lida hisoblanadi. Holatni faqat siz (kutubxonachi) kitobni
+            qo'lda qabul qilib, «Qaytarildi» tugmasini bosganingizdagina o'zgartirasiz.
         </p>
     </div>
     <?php
@@ -426,6 +555,10 @@ function renderOfflineDaysSelect(string $selectId, string $name = 'loan_days', i
  *  $title   – modul ichida sarlavha o'rniga ko'rsatiladi (kitob
  *             sahifasida sarlavha kerak emas).
  *  $backText – "Yopish" havolasi matni (bo'sh bo'lsa havola chiqmaydi).
+ *
+ *  MUHIM: forma har doim to'liq yo'l bilan ochiladi va tekshiriladi:
+ *    - action="..." atributi qo'yilganmi (JS tashqarisidagi bloklar ham)
+ *    - bo'sh nusxa bor-yo'qligidan qat'i narp ishlaydi
  * ============================================================
  */
 function renderOfflineIssueForm(int $bookId, string $variant = 'modal', string $title = '', string $backText = ''): void
@@ -437,7 +570,8 @@ function renderOfflineIssueForm(int $bookId, string $variant = 'modal', string $
     $fieldClass = offlineFieldClass();
     ?>
     <form method="post" action="<?= e(url('admin/process-offline.php')) ?>"
-          class="space-y-3 text-left" data-offline-form>
+          class="space-y-3 text-left" data-offline-form
+          data-endpoint="<?= e(url('admin/process-offline.php')) ?>">
         <?= csrfField() ?>
         <input type="hidden" name="book_id" value="<?= (int) $bookId ?>">
         <input type="hidden" name="from" value="<?= e($variant) ?>">

@@ -13,6 +13,11 @@
 --  2-bosqich: users jadvaliga fakultet, yo'nalish, guruh va HEMIS ID qo'shildi.
 --  3-bosqich: reservations jadvaliga pickup_days va pickup_deadline qo'shildi,
 --             muddati o'tganda avtomatik rad etish tizimi joriy etildi.
+--  5-bosqich: OFFLAYN BERISH + HAQIQIY QAYTARISH TIZIMI:
+--             - "berilgan" holati: kitob talaba qo'lida, due_date – qaytarish muddati
+--             - picked_up_at / due_date / returned_at / loan_days / is_offline ustunlari
+--             - kitobni faqat kutubxonachi «Qaytarildi» tugmasi orqali qaytara oladi;
+--               hech qanday avtomatik "qaytarildi" belgilash YO'Q (muddat o'tsa – KECHIKISH)
 --
 --  Ishga tushirish: phpMyAdmin → "Import" bo'limidan shu faylni yuklang.
 --  DIQQAT: bu fayl bazani o'chirib qayta yaratadi. Mavjud bazani saqlab qolmoqchi
@@ -73,11 +78,13 @@ CREATE TABLE `books` (
   `description` TEXT NULL,                                    -- Qisqa tavsif
   `cover_image` VARCHAR(255) NULL,                            -- Muqova rasmi manzili (masalan: uploads/covers/1.jpg)
   `copies`      INT UNSIGNED NOT NULL DEFAULT 1,              -- Kutubxonadagi jami nusxalar soni
+  `available_copies` INT UNSIGNED NOT NULL DEFAULT 1,         -- HOZIR BO'SH nusxalar soni (6-bosqich: real-time; berilganda kamayadi, «Qaytarildi» da qo'shiladi)
   `created_at`  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Katalogga qo'shilgan vaqti
   PRIMARY KEY (`id`),
   KEY `idx_books_title` (`title`),                            -- Nomi bo'yicha qidiruvni tezlashtiradi
   KEY `idx_books_author` (`author`),                          -- Muallif bo'yicha qidiruvni tezlashtiradi
-  KEY `idx_books_category` (`category`)                       -- Kategoriya bo'yicha saralashni tezlashtiradi
+  KEY `idx_books_category` (`category`),                      -- Kategoriya bo'yicha saralashni tezlashtiradi
+  KEY `idx_books_available` (`available_copies`)              -- Bo'shlar soni bo'yicha filtr tez ishlashi uchun
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_unicode_ci;
@@ -85,8 +92,15 @@ CREATE TABLE `books` (
 -- ------------------------------------------------------------
 -- 4. JADVAL: reservations (Band qilishlar)
 --    Maydonlar: foydalanuvchi, kitob, sana, holati
---    Holatlar: kutilmoqda, tasdiqlandi, qaytarildi, rad_etildi
--- ------------------------------------------------------------
+--    Holatlar: kutilmoqda → tasdiqlandi → berilgan → qaytarildi
+--              (kutilmoqda → rad_etildi ham mumkin)
+--      kutilmoqda   – talaba onlayn band qildi, olib ketishi kutilmoqda
+--      tasdiqlandi  – kutubxonachi ruxsat berdi, kitob hali turgan joyida
+--      berilgan     – kitob HAQIQIY talaba qo'lida (due_date – qaytarish muddati)
+--      qaytarildi   – kutubxonachi kitobni qabul qildi (returned_at yozilgan)
+--      rad_etildi   – bekor qilindi yoki olib ketish muddati o'tdi
+--    MUHIM: "qaytarildi" faqat kutubxonachi tugma orqali belgilanadi.
+-- ============================================================
 CREATE TABLE `reservations` (
   `id`              INT UNSIGNED NOT NULL AUTO_INCREMENT,       -- Band qilish ID raqami
   `user_id`         INT UNSIGNED NOT NULL,                      -- Kim band qildi (users.id)
@@ -94,13 +108,19 @@ CREATE TABLE `reservations` (
   `reserved_date`   DATE NOT NULL,                              -- Band qilingan sana
   `pickup_days`     TINYINT UNSIGNED NOT NULL DEFAULT 1,        -- Olib ketish muddati: 1, 2 yoki 3 kun
   `pickup_deadline` DATETIME NOT NULL,                          -- Shu muddatgacha olib ketmasa avtomatik rad etiladi
-  `status`          ENUM('kutilmoqda','tasdiqlandi','qaytarildi','rad_etildi') NOT NULL DEFAULT 'kutilmoqda', -- Holati
+  `status`          ENUM('kutilmoqda','tasdiqlandi','berilgan','qaytarildi','rad_etildi') NOT NULL DEFAULT 'kutilmoqda', -- Holati
+  `picked_up_at`    DATETIME NULL,                              -- Kitob qo'lga berilgan vaqt (offlayn yoki approve)
+  `due_date`        DATETIME NULL,                              -- Qaytarish muddati = picked_up_at + loan_days kun
+  `returned_at`     DATETIME NULL,                              -- Haqiqatan qaytarilgan vaqt (faqat kutubxonachi belgilaydi)
+  `loan_days`       TINYINT UNSIGNED NULL,                      -- Necha kunga berilgan (1/2/3/5/10)
+  `is_offline`      TINYINT(1) NOT NULL DEFAULT 0,              -- 1 = kutubxonachi offlayn bergan (talaba onlayn band qilmagan)
   `created_at`      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Yozuv yaratilgan vaqt
   PRIMARY KEY (`id`),
   KEY `idx_res_user` (`user_id`),
   KEY `idx_res_book` (`book_id`),
   KEY `idx_res_status` (`status`),
   KEY `idx_res_deadline` (`status`, `pickup_deadline`),
+  KEY `idx_res_due` (`status`, `due_date`),                     -- muddati kelgan (kechikkan) kitoblarni tez topish uchun
   -- Foydalanuvchi o'chirilsa, uning band qilishlari ham o'chadi
   CONSTRAINT `fk_res_user`
     FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
@@ -150,7 +170,7 @@ INSERT INTO `users` (`id`, `name`, `email`, `faculty`, `direction`, `group_name`
 -- 6.2. Namunaviy kitoblar (Texnik topshiriq talabi: kamida 30 ta yozuv)
 --      Matn ichidagi apostrof (') SQL'da ikkita ('') bilan yoziladi.
 -- ------------------------------------------------------------
-INSERT INTO `books` (`id`, `title`, `author`, `category`, `description`, `cover_image`, `copies`) VALUES
+INSERT INTO `books` (`id`, `title`, `author`, `category`, `description`, `cover_image`, `copies`, `available_copies`, `available_copies`) VALUES
 (1,  'O''tkan kunlar', 'Abdulla Qodiriy', 'Badiiy', 'O''zbek adabiyotidagi birinchi roman.', NULL, 3),
 (2,  'Mehrobdan chayon', 'Abdulla Qodiriy', 'Badiiy', 'Tarixiy roman.', NULL, 2),
 (3,  'Sariq devni minib', 'Xudoyberdi To''xtaboyev', 'Badiiy', 'Sarguzasht qissa.', NULL, 4),
@@ -181,6 +201,21 @@ INSERT INTO `books` (`id`, `title`, `author`, `category`, `description`, `cover_
 (28, 'Ingliz tili grammatikasi', 'Namunaviy muallif', 'Darslik', 'Ingliz tili grammatikasi bo''yicha o''quv qo''llanma.', NULL, 5),
 (29, 'Veb dasturlash asoslari (HTML, CSS, JS)', 'Namunaviy muallif', 'Darslik', 'Veb-sayt yaratishni noldan o''rganish uchun qo''llanma.', NULL, 4),
 (30, 'Statistika asoslari', 'Namunaviy muallif', 'Darslik', 'Ma''lumotlarni tahlil qilish va statistik usullar.', NULL, 3);
+
+-- ------------------------------------------------------------
+-- 6.2.1. available_copies ni HAQIQIY bo'sh soniga to'g'rilash
+--       (namunaviy band qilishlar hisobiga; 006-migratsiya bilan bir xil
+--        formula). Shunda yangi baza ham darhol real-time holatda bo'ladi.
+-- ------------------------------------------------------------
+UPDATE `books` b
+SET b.`available_copies` = GREATEST(
+      0,
+      CAST(b.`copies` AS SIGNED) - (
+        SELECT COUNT(*) FROM `reservations` r
+        WHERE r.`book_id` = b.`id`
+          AND r.`status` IN ('kutilmoqda', 'tasdiqlandi', 'berilgan')
+      )
+    );
 
 -- ------------------------------------------------------------
 -- 6.3. Namunaviy elektron resurslar

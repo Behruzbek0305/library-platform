@@ -151,16 +151,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!$errors) {
             try {
+                // 6-bosqich: available_copies ustuni bormi? (migratsiya
+                // hali ishga tushirilmagan bo'lsa INSERT/UPDATE shu ustunsiz bajariladi)
+                $col = $pdo->query(
+                    "SELECT COUNT(*) FROM information_schema.COLUMNS
+                      WHERE TABLE_SCHEMA = DATABASE()
+                        AND TABLE_NAME   = 'books'
+                        AND COLUMN_NAME  = 'available_copies'"
+                )->fetchColumn();
+                $hasAvailable = (int) $col > 0;
+
                 if ($isEdit) {
                     // Yangi rasm yuklangan bo'lsa almashtiramiz, bo'lmasa eskisi qoladi
                     $stmt = $pdo->prepare(
                         'UPDATE books
                          SET title = :title, author = :author, category = :category,
                              description = :description, copies = :copies,
-                             cover_image = :cover_image
-                         WHERE id = :id'
+                             cover_image = :cover_image'
+                            . ($hasAvailable
+                               ? ', available_copies = GREATEST(0, CAST(:copies AS SIGNED) - :activeCount)'
+                               : '')
+                            . ' WHERE id = :id'
                     );
-                    $stmt->execute([
+                    $params = [
                         ':title'       => $form['title'],
                         ':author'      => $form['author'],
                         ':category'    => $form['category'],
@@ -168,7 +181,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':copies'      => $copies,
                         ':cover_image' => $newCoverPath ?? $book['cover_image'],
                         ':id'          => $id,
-                    ]);
+                    ];
+                    if ($hasAvailable) {
+                        // Bo'sh = yangi jami nusxa − hozir bandlar (manfiy emas)
+                        $params[':activeCount'] = $active;
+                    }
+                    $stmt->execute($params);
 
                     // Eski rasm endi keraksiz – diskdan o'chiramiz
                     if ($newCoverPath !== null) {
@@ -177,10 +195,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     setFlash('success', "Kitob ma'lumotlari yangilandi.");
                 } else {
-                    $stmt = $pdo->prepare(
-                        'INSERT INTO books (title, author, category, description, cover_image, copies)
-                         VALUES (:title, :author, :category, :description, :cover_image, :copies)'
-                    );
+                    if ($hasAvailable) {
+                        $stmt = $pdo->prepare(
+                            'INSERT INTO books (title, author, category, description, cover_image, copies, available_copies)
+                             VALUES (:title, :author, :category, :description, :cover_image, :copies, :copies)'
+                        );
+                    } else {
+                        $stmt = $pdo->prepare(
+                            'INSERT INTO books (title, author, category, description, cover_image, copies)
+                             VALUES (:title, :author, :category, :description, :cover_image, :copies)'
+                        );
+                    }
                     $stmt->execute([
                         ':title'       => $form['title'],
                         ':author'      => $form['author'],

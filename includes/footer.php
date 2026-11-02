@@ -21,11 +21,24 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/book_helpers.php';
 
-// Oyna ichidagi tugmalar foydalanuvchi roliga qarab o'zgaradi
+// Oyna ichidagi tugmalar foydalanuvchi roliga qarab o'zgaradi.
+// Rol: guest (kirmagan) | student (talaba) | admin (kutubxonachi).
 $footerUser = currentUser();
-$modalRole  = $footerUser === null ? 'guest' : ($footerUser['role'] === 'talaba' ? 'student' : 'admin');
+$modalRole  = $footerUser === null ? 'guest' : ($footerUser['role'] === 'admin' ? 'admin' : 'student');
+
+// JS kelgan-ketganini tekshiramiz (footer.php skriptni shu manzildan ulaydi)
+$hasBookModalJs = is_readable(__DIR__ . '/../assets/js/book-modal.js');
 ?>
     </main>
+
+    <?php if ($modalRole === 'admin' && !$hasBookModalJs): ?>
+        <!-- Kutubxonachiga ogohlantirish: skript bo'lmasa modalning tugmalari ishlamaydi -->
+        <div class="mb-4 border rounded-md px-4 py-3 bg-amber-50 text-amber-800 border-amber-300 text-sm">
+            ⚠️ <b>Diqqat:</b> <code>assets/js/book-modal.js</code> fayli topilmadi –
+            kitob oynasi va «Offlayn Registratsiya qilish» tugmasi ishlamaydi.
+            Faylni loyihangizdagi <code>assets/js/</code> papkasiga qo'ying.
+        </div>
+    <?php endif; ?>
 
     <!-- ====== KITOB OYNASI (qalqib chiqadi, orqa fon qoraroq) ======
          "inert" – yopiq paytda ichidagi elementlarga Tab bilan o'tib bo'lmaydi.
@@ -71,8 +84,11 @@ $modalRole  = $footerUser === null ? 'guest' : ($footerUser['role'] === 'talaba'
                     </p>
 
                     <!-- ====== Kutubxonachi: avvalgi kulrang "Faqat talabalar band qila oladi"
-                         tugmasi o'rniga yashil "Offlayn Registratsiya qilish" tugmasi ====== -->
-                    <div data-state="admin" class="hidden space-y-3">
+                         tugmasi o'rniga yashil "Offlayn Registratsiya qilish" tugmasi.
+                         data-offline-endpoint – forma qayerga POST bo'lishini JS bilib olishi
+                         uchun (shu atribut bo'lmasa ham ishlaydi, lekin tekshiruv osonroq). ====== -->
+                    <div data-state="admin" class="hidden space-y-3"
+                         data-offline-endpoint="<?= e(url('admin/process-offline.php')) ?>">
                         <button type="button" id="bookModalOfflineBtn"
                                 class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold rounded-md px-5 py-2.5">
                             Offlayn Registratsiya qilish
@@ -81,7 +97,9 @@ $modalRole  = $footerUser === null ? 'guest' : ($footerUser['role'] === 'talaba'
                         <!-- Bo'sh nusxa bo'lmasa – ogohlantirish (forma baribir ochiladi,
                              2-bosqichda server tekshiradi) -->
                         <p id="bookModalOfflineWarn" class="hidden text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-                            Hozir bo'sh nusxa ko'rinmayapti. Baribir berilsa, keyinroq qaytarilgan deb belgilang.
+                            Hozir bo'sh nusxa ko'rinmayapti. Baribir bersangiz, kitob hujjat yuzasidan berilgan
+                            hisoblanadi – keyin kelgan talabaga navratda bering va muddat tugagach admin
+                            panelda «Qaytarildi» tugmasini bosib belgilang.
                         </p>
                     </div>
 
@@ -99,7 +117,8 @@ $modalRole  = $footerUser === null ? 'guest' : ($footerUser['role'] === 'talaba'
                         </p>
 
                         <form method="post" action="<?= e(url('admin/process-offline.php')) ?>"
-                              id="bookModalOfflineForm" data-offline-form class="space-y-3">
+                              id="bookModalOfflineForm" data-offline-form class="space-y-3"
+                              data-endpoint="<?= e(url('admin/process-offline.php')) ?>">
                             <?= csrfField() ?>
                             <input type="hidden" name="book_id" id="bookModalOfflineBookId" value="">
                             <input type="hidden" name="from" value="modal">
@@ -207,8 +226,23 @@ $modalRole  = $footerUser === null ? 'guest' : ($footerUser['role'] === 'talaba'
         © <?= date('Y') ?> Kutubxona – axborot resurs markazi. Talabalar loyihasi.
     </footer>
 
-    <script src="<?= e(url('assets/js/menu.js')) ?>" defer></script>
-    <script src="<?= e(url('assets/js/live-search.js')) ?>" defer></script>
-    <script src="<?= e(url('assets/js/book-modal.js')) ?>" defer></script>
+    <?php /* ============================================================
+        MUHIM: skript manzili papka chuqurligiga qarab o'zgaradi.
+        header.php hisoblagan $jsBase ishlatiladi:
+          index.php / book.php  (ildizda) → assets/js/...
+          admin/index.php       (ichida)  → ../assets/js/...
+        Nodir holat: fayl nomini o'zgartirib qo'ygan bo'lsangiz yoki
+        git checkout qisman bo'lsa, brauzer 404 beradi va HECH QANDAY
+        tugma ishlamaydi. Shu sababli tekshirib, konsolga xabar chiqaramiz.
+        ============================================================ */ ?>
+    <?php if (!$hasBookModalJs): ?>
+        <script>
+            console.error('[Kutubxona-ARM] assets/js/book-modal.js topilmadi! Kitob oynasi va tugmalar ishlamaydi. Faylni "assets/js/" papkasiga qo\'ying.');
+        </script>
+    <?php endif; ?>
+
+    <script src="<?= e($jsBase . 'assets/js/menu.js') ?>" defer></script>
+    <script src="<?= e($jsBase . 'assets/js/live-search.js') ?>" defer></script>
+    <script src="<?= e($jsBase . 'assets/js/book-modal.js') ?>" defer></script>
 </body>
 </html>

@@ -117,6 +117,10 @@ try {
         ':pickup_deadline' => $pickupDeadline,
     ]);
 
+    // REAL-TIME (6-bosqich): band qo'yilganda ham bo'sh nusxa kamayadi,
+    // rad etilsa yoki muddatda olinmasa «Qaytarildi»/cron mantig'ida qaytadi.
+    decrementAvailableCopies($pdo, $bookId);
+
     $pdo->commit();
 
     $deadlineText = date('d.m.Y H:i', strtotime($pickupDeadline));
