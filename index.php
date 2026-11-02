@@ -19,8 +19,8 @@ $newBooks   = [];
 $categories = [];
 
 try {
-    // Eng so'nggi qo'shilgan 4 ta kitob
-    $stmt = $pdo->query(BOOK_SELECT . ' ORDER BY b.created_at DESC, b.id DESC LIMIT 4');
+    // Eng so'nggi qo'shilgan 4 ta kitob (available_copies books jadvalidan to'g'ridan-to'g'ri keladi)
+    $stmt = $pdo->query('SELECT * FROM books ORDER BY created_at DESC, id DESC LIMIT 4');
     $newBooks = $stmt->fetchAll();
 
     // Har bir kategoriyada nechta kitob borligi

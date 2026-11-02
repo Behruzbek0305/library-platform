@@ -100,7 +100,7 @@ if ($errors) {
 try {
     $pdo->beginTransaction();
 
-    // --- 2.1. Kitob mavjudligini tekshirish (qatorni qulflash) ---
+    // --- 2.1. Kitobni qulflab olamiz va bo'sh nusxalar sonini books jadvalidan o'qiymiz ---
     $stmt = $pdo->prepare('SELECT id, title, copies, available_copies FROM books WHERE id = :id FOR UPDATE');
     $stmt->execute([':id' => $bookId]);
     $book = $stmt->fetch();
@@ -111,20 +111,13 @@ try {
         redirect($backUrl);
     }
 
-    // --- 2.2. Bo'sh nusxa bormi? (BOOK_SELECT mantigi bilan bir xil) ---
-    $stmt = $pdo->prepare(
-        "SELECT COUNT(*) FROM reservations
-         WHERE book_id = :book_id AND status IN ('kutilmoqda', 'tasdiqlandi', 'berilgan')"
-    );
-    $stmt->execute([':book_id' => $bookId]);
-    $taken = (int) $stmt->fetchColumn();
-
-    if ((int) $book['copies'] - $taken <= 0) {
+    // --- 2.2. Bo'sh nusxa yo'q bo'lsa, offlayn berib bo'lmaydi ---
+    if ((int) $book['available_copies'] <= 0) {
         $pdo->rollBack();
         setFlash('error',
-            '«' . $book['title'] . '» uchin hozir bo\'sh nusxa yo\'q '
+            '«' . $book['title'] . '» uchun hozir bo\'sh nusxa yo\'q '
             . '(jami ' . (int) $book['copies'] . ' ta, barchasi band yoki talabada). '
-            . 'Avval boshqa nusxani qaytarib oling yoki kitobga yangi nusxa qo\'shing.');
+            . 'Avval nusxani qaytarib oling yoki kitobga yangi nusxa qo\'shing.');
         redirect($backUrl);
     }
 

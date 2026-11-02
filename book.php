@@ -104,33 +104,35 @@ require_once __DIR__ . '/includes/header.php';
                     <a href="<?= e(url('register.php')) ?>" class="text-blue-600 hover:underline">ro'yxatdan o'ting</a>.
                 </p>
 
-            <?php elseif ($user['role'] !== 'talaba'): ?>
-                <!-- ====== Kutubxonachi: offlayn berish (1-bosqich) ======
-                     JS yonimagan sahifada forma darhol ochiq ko'rinadi -->
+                <?php elseif ($user['role'] !== 'talaba'): ?>
+                <!-- Kutubxonachi: offlayn berish. Bo'sh nusxa 0 bo'lsa tugma faol emas, forma chiqmaydi -->
                 <div class="max-w-md space-y-3" data-offline-block>
                     <button type="button" id="pageOfflineToggle"
-                            class="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white font-semibold rounded-md px-5 py-2.5">
+                            <?= $available <= 0 ? 'disabled' : '' ?>
+                            class="w-full sm:w-auto bg-green-600 hover:bg-green-700
+                                   disabled:bg-slate-400 disabled:hover:bg-slate-400 disabled:cursor-not-allowed
+                                   text-white font-semibold rounded-md px-5 py-2.5">
                         Offlayn Registratsiya qilish
                     </button>
 
                     <?php if ($available <= 0): ?>
                         <p class="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-                            Hozir bo'sh nusxa ko'rinmayapti. Baribir berilsa, keyinroq qaytarilgan deb belgilang.
+                            Hozir bo'sh nusxa yo'q. Kitob qaytarilgach tugma yana faollashadi.
                         </p>
-                    <?php endif; ?>
+                    <?php else: ?>
+                        <div id="pageOfflineForm" class="<?= $hasJs ? 'hidden' : '' ?> border border-green-200 bg-green-50/60 rounded-lg p-4">
+                            <div class="flex items-start justify-between gap-2 mb-1">
+                                <h2 class="font-bold text-green-800 leading-snug">Kitobni talabaga berish (offlayn)</h2>
+                                <button type="button" data-offline-back aria-label="Yopish"
+                                        class="shrink-0 rounded-full w-7 h-7 text-slate-500 hover:bg-white">✕</button>
+                            </div>
+                            <p class="text-xs text-slate-600 mb-3">
+                                Talaba onlayn band qilmagan – uni kutubxonachi qo'lda kiritadi.
+                            </p>
 
-                    <div id="pageOfflineForm" class="<?= $hasJs ? 'hidden' : '' ?> border border-green-200 bg-green-50/60 rounded-lg p-4">
-                        <div class="flex items-start justify-between gap-2 mb-1">
-                            <h2 class="font-bold text-green-800 leading-snug">Kitobni talabaga berish (offlayn)</h2>
-                            <button type="button" data-offline-back aria-label="Yopish"
-                                    class="shrink-0 rounded-full w-7 h-7 text-slate-500 hover:bg-white">✕</button>
+                            <?php renderOfflineIssueForm((int) $book['id'], 'page'); ?>
                         </div>
-                        <p class="text-xs text-slate-600 mb-3">
-                            Talaba onlayn band qilmagan – uni kutubxonachi qo'lda kiritadi.
-                        </p>
-
-                        <?php renderOfflineIssueForm((int) $book['id'], 'page'); ?>
-                    </div>
+                    <?php endif; ?>
                 </div>
 
             <?php elseif ($alreadyBooked): ?>

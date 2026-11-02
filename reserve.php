@@ -62,11 +62,10 @@ $pickupDeadline = date('Y-m-d H:i:s', strtotime("+{$pickupDays} days"));
 $bookPage = 'book.php?id=' . $bookId;
 
 try {
-    // Tranzaksiya boshlanadi
     $pdo->beginTransaction();
 
-    // Kitob qatorini qulflaymiz: boshqa so'rov tugaguncha kutib turadi
-    $stmt = $pdo->prepare('SELECT id, title, copies FROM books WHERE id = :id FOR UPDATE');
+    // Kitob qatorini qulflaymiz va bo'sh nusxalar sonini TO'G'RIDAN-TO'G'RI books jadvalidan olamiz
+    $stmt = $pdo->prepare('SELECT id, title, available_copies FROM books WHERE id = :id FOR UPDATE');
     $stmt->execute([':id' => $bookId]);
     $book = $stmt->fetch();
 
@@ -76,25 +75,18 @@ try {
         redirect('catalog.php');
     }
 
-    // Hozir band bo'lgan nusxalar soni
-    $stmt = $pdo->prepare(
-        "SELECT COUNT(*) FROM reservations
-         WHERE book_id = :book_id AND status IN ('kutilmoqda', 'tasdiqlandi')"
-    );
-    $stmt->execute([':book_id' => $bookId]);
-    $taken = (int) $stmt->fetchColumn();
-
-    if ((int) $book['copies'] - $taken <= 0) {
+    // Bo'sh nusxa yo'q bo'lsa – band qilib bo'lmaydi
+    if ((int) $book['available_copies'] <= 0) {
         $pdo->rollBack();
         setFlash('error', "Bu kitob hozir bo'sh emas.");
         redirect($bookPage);
     }
 
-    // Shu foydalanuvchi bu kitobni allaqachon band qilganmi?
+    // Shu foydalanuvchi bu kitobni allaqachon band qilgan yoki qo'lida ushlab turibdimi?
     $stmt = $pdo->prepare(
         "SELECT COUNT(*) FROM reservations
          WHERE user_id = :user_id AND book_id = :book_id
-           AND status IN ('kutilmoqda', 'tasdiqlandi')"
+           AND status IN ('kutilmoqda', 'tasdiqlandi', 'berilgan')"
     );
     $stmt->execute([':user_id' => $user['id'], ':book_id' => $bookId]);
 
@@ -117,9 +109,12 @@ try {
         ':pickup_deadline' => $pickupDeadline,
     ]);
 
-    // REAL-TIME (6-bosqich): band qo'yilganda ham bo'sh nusxa kamayadi,
-    // rad etilsa yoki muddatda olinmasa «Qaytarildi»/cron mantig'ida qaytadi.
-    decrementAvailableCopies($pdo, $bookId);
+    // Bo'sh nusxani 1 taga kamaytiramiz (qator qulflangan, shuning uchun xavfsiz)
+    if (!decrementAvailableCopies($pdo, $bookId)) {
+        $pdo->rollBack();
+        setFlash('error', "Bu kitob hozir bo'sh emas.");
+        redirect($bookPage);
+    }
 
     $pdo->commit();
 

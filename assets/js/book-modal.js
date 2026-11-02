@@ -85,9 +85,17 @@
         return 'reserve';
     }
 
+    /** Bo'sh nusxa 0 bo'lsa, "Offlayn Registratsiya qilish" tugmasi faol bo'lmaydi */
+    function syncOfflineButton() {
+        if (offlineBtn) {
+            offlineBtn.disabled = currentAvailable <= 0;
+        }
+    }
+
     /** Oyna ochilganda yoki "Orqaga" bosilganda: admin blokiga qaytadi */
     function resetAdminView() {
         showState('admin');
+        syncOfflineButton();
         if (offlineWarn) {
             offlineWarn.classList.toggle('hidden', currentAvailable > 0);
         }
@@ -95,6 +103,11 @@
 
     /** Kutubxonachi: kitob modalining ichida talaba ma'lumotlari formasini ochadi */
     function openOfflineForm() {
+         // Bo'sh nusxa yo'q bo'lsa forma ochilmaydi
+        if (currentAvailable <= 0) {
+            return;
+        }
+
         var bookId = bookIdEl ? bookIdEl.value : '';
 
         if (offlineBookIdEl) {
@@ -145,6 +158,7 @@
         var copies    = parseInt(data.copies, 10) || 0;
 
         currentAvailable = available;
+        syncOfflineButton();
 
         titleEl.textContent    = data.title || '';
         authorEl.textContent   = data.author || '';

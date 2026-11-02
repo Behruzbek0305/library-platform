@@ -47,19 +47,10 @@ function categoryStyle(string $category): array
 //    dinamik hisoblab qo'yiladi (fallback). Shablonga WHERE / ORDER BY
 //    qismini o'zingiz qo'shasiz.
 // ------------------------------------------------------------
+// Kitoblar to'g'ridan-to'g'ri books jadvalidan olinadi.
+// "available" – books.available_copies ustunining qisqa nomi (eski kod bilan moslik uchun).
 const BOOK_SELECT = "
-    SELECT b.*,
-           IF(b.available_copies IS NULL,
-              GREATEST(0, CAST(b.copies AS SIGNED) - (
-                  SELECT COUNT(*) FROM reservations r
-                  WHERE r.book_id = b.id AND r.status IN ('kutilmoqda', 'tasdiqlandi', 'berilgan')
-              )),
-              LEAST(CAST(b.available_copies AS SIGNED),
-                    GREATEST(0, CAST(b.copies AS SIGNED) - (
-                        SELECT COUNT(*) FROM reservations r
-                        WHERE r.book_id = b.id AND r.status IN ('kutilmoqda', 'tasdiqlandi', 'berilgan')
-                    )))
-           ) AS available
+    SELECT b.*, b.available_copies AS available
     FROM books b
 ";
 
@@ -183,7 +174,7 @@ function bookDataAttrs(array $book): string
         'data-category'    => (string) $book['category'],
         'data-description' => (string) ($book['description'] ?? ''),
         'data-copies'      => (string) (int) $book['copies'],
-        'data-available'   => (string) (int) $book['available'],
+        'data-available'   => (string) (int) $book['available_copies'],
         'data-cover'       => $cover,
         'data-emoji'       => $style['emoji'],
         'data-bg'          => $style['bg'],
@@ -207,7 +198,7 @@ function bookDataAttrs(array $book): string
 function renderBookCard(array $book): void
 {
     $style     = categoryStyle((string) $book['category']);
-    $available = (int) $book['available'];
+    $available = (int) $book['available_copies'];
     ?>
     <a href="<?= e(url('book.php?id=' . (int) $book['id'])) ?>" <?= bookDataAttrs($book) ?>
        class="block bg-white border border-slate-200 rounded-xl overflow-hidden hover:-translate-y-1 hover:shadow-lg transition">
@@ -253,7 +244,7 @@ function renderBookCard(array $book): void
 function renderBookRow(array $book): void
 {
     $style     = categoryStyle((string) $book['category']);
-    $available = (int) $book['available'];
+    $available = (int) $book['available_copies'];
     ?>
     <a href="<?= e(url('book.php?id=' . (int) $book['id'])) ?>" <?= bookDataAttrs($book) ?>
        class="flex items-center gap-3 p-3 hover:bg-slate-50">

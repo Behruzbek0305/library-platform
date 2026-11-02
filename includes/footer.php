@@ -90,16 +90,14 @@ $hasBookModalJs = is_readable(__DIR__ . '/../assets/js/book-modal.js');
                     <div data-state="admin" class="hidden space-y-3"
                          data-offline-endpoint="<?= e(url('admin/process-offline.php')) ?>">
                         <button type="button" id="bookModalOfflineBtn"
-                                class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold rounded-md px-5 py-2.5">
+                                class="w-full bg-green-600 hover:bg-green-700
+                                       disabled:bg-slate-400 disabled:hover:bg-slate-400 disabled:cursor-not-allowed
+                                       text-white font-semibold rounded-md px-5 py-2.5">
                             Offlayn Registratsiya qilish
                         </button>
 
-                        <!-- Bo'sh nusxa bo'lmasa – ogohlantirish (forma baribir ochiladi,
-                             2-bosqichda server tekshiradi) -->
                         <p id="bookModalOfflineWarn" class="hidden text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-                            Hozir bo'sh nusxa ko'rinmayapti. Baribir bersangiz, kitob hujjat yuzasidan berilgan
-                            hisoblanadi – keyin kelgan talabaga navratda bering va muddat tugagach admin
-                            panelda «Qaytarildi» tugmasini bosib belgilang.
+                            Hozir bo'sh nusxa yo'q – kitob qaytarilguncha offlayn berib bo'lmaydi.
                         </p>
                     </div>
 

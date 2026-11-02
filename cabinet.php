@@ -44,21 +44,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $reservationId = filter_var($_POST['cancel_id'] ?? null, FILTER_VALIDATE_INT);
 
-    if ($reservationId !== false && $reservationId > 0) {
+        if ($reservationId !== false && $reservationId > 0) {
         try {
-            // Faqat o'ziga tegishli va hali tasdiqlanmagan band qilishni o'chirish mumkin
+            $pdo->beginTransaction();
+
+            // Faqat o'ziga tegishli va hali tasdiqlanmagan band qilishni topamiz (qatorni qulflaymiz)
             $stmt = $pdo->prepare(
-                "DELETE FROM reservations
-                 WHERE id = :id AND user_id = :user_id AND status = 'kutilmoqda'"
+                "SELECT book_id FROM reservations
+                 WHERE id = :id AND user_id = :user_id AND status = 'kutilmoqda'
+                 FOR UPDATE"
             );
             $stmt->execute([':id' => $reservationId, ':user_id' => $user['id']]);
+            $cancelBookId = (int) ($stmt->fetchColumn() ?: 0);
 
-            if ($stmt->rowCount() > 0) {
-                setFlash('success', 'Band qilish bekor qilindi.');
+            if ($cancelBookId > 0) {
+                $del = $pdo->prepare(
+                    "DELETE FROM reservations
+                     WHERE id = :id AND user_id = :user_id AND status = 'kutilmoqda'"
+                );
+                $del->execute([':id' => $reservationId, ':user_id' => $user['id']]);
+
+                if ($del->rowCount() > 0) {
+                    // Bekor qilingan band bo'sh nusxani QAYTARADI
+                    incrementAvailableCopies($pdo, $cancelBookId);
+                    $pdo->commit();
+                    setFlash('success', 'Band qilish bekor qilindi.');
+                } else {
+                    $pdo->rollBack();
+                    setFlash('error', "Bu band qilishni bekor qilib bo'lmaydi.");
+                }
             } else {
+                $pdo->rollBack();
                 setFlash('error', "Bu band qilishni bekor qilib bo'lmaydi.");
             }
         } catch (PDOException $ex) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
             error_log('[Kutubxona-ARM] Bekor qilishda xatolik: ' . $ex->getMessage());
             setFlash('error', 'Kutilmagan xatolik yuz berdi.');
         }

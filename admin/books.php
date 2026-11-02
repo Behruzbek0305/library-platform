@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Kitob hozir kimdadir bo'lsa yoki band qilingan bo'lsa, o'chirmaymiz
             $stmt = $pdo->prepare(
                 "SELECT COUNT(*) FROM reservations
-                 WHERE book_id = :id AND status IN ('kutilmoqda', 'tasdiqlandi')"
+                 WHERE book_id = :id AND status IN ('kutilmoqda', 'tasdiqlandi', 'berilgan')"
             );
             $stmt->execute([':id' => $id]);
 
@@ -68,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // ------------------------------------------------------------
 $books = [];
 try {
-    $books = $pdo->query(BOOK_SELECT . ' ORDER BY b.id DESC')->fetchAll();
+    $books = $pdo->query('SELECT * FROM books ORDER BY id DESC')->fetchAll();
 } catch (PDOException $ex) {
     error_log('[Kutubxona-ARM] Kitoblar ro\'yxatida xatolik: ' . $ex->getMessage());
     setFlash('error', "Kitoblarni yuklashda xatolik yuz berdi.");
@@ -117,7 +117,7 @@ require_once __DIR__ . '/../includes/header.php';
                         </td>
                         <td class="px-4 py-3 break-words"><?= e($b['author']) ?></td>
                         <td class="px-4 py-3"><?= e($b['category']) ?></td>
-                        <td class="px-4 py-3"><?= (int) $b['available'] ?> / <?= (int) $b['copies'] ?></td>
+                        <td class="px-4 py-3"><?= (int) $b['available_copies'] ?> / <?= (int) $b['copies'] ?></td>
                         <td class="px-4 py-3">
                             <div class="flex flex-wrap gap-2 justify-end">
                                 <a href="<?= e(url('admin/book_form.php?id=' . (int) $b['id'])) ?>"
@@ -151,7 +151,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
                     <span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600"><?= e($b['category']) ?></span>
                     <span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                        Bo'sh: <?= (int) $b['available'] ?> / <?= (int) $b['copies'] ?>
+                        Bo'sh: <?= (int) $b['available_copies'] ?> / <?= (int) $b['copies'] ?>
                     </span>
                 </div>
 
