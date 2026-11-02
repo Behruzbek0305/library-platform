@@ -251,9 +251,14 @@ function statusBadge(string $status, ?string $deadline = null): string
 
 // ------------------------------------------------------------
 // 5. OLIB KETISH MUDDATI (1, 2 yoki 3 kun) VA AVTOMATIK RAD ETISH
+//    OFFLINE_DAY_OPTIONS – kutubxonachi uchun "Offlayn registratsiya"
+//    formasidagi muddatlar (1, 2, 3, 5, 10 kun). Bu – kitobning berilish
+//    muddati, olib ketish muddati emas, shuning uchun MAX_PICKUP_DAYS
+//    chegarasiga kirmaydi.
 // ------------------------------------------------------------
 const MAX_PICKUP_DAYS = 3;
 const PICKUP_DAY_OPTIONS = [1, 2, 3];
+const OFFLINE_DAY_OPTIONS = [1, 2, 3, 5, 10];
 
 /**
  * Olib ketish muddati o'tib ketgan, hali "kutilmoqda" holatidagi band qilishlarni
@@ -349,6 +354,160 @@ function renderPickupSelect(string $selectId = 'pickup_days', string $selectName
             ⚠️ Tanlangan muddat ichida olib ketmasangiz, band qilish avtomatik rad etiladi.
         </p>
     </div>
+    <?php
+}
+
+/**
+ * Talaba ID'sini qoidaga muvofiq tozalaydi: bo'shliqlar olib tashlanadi,
+ * faqat raqamlar qoldiriladi (HEMIS ID'da bo'shliq bo'lmaydi).
+ */
+function normalizeHemisId(mixed $value): string
+{
+    return (string) preg_replace('/\D+/', '', (string) $value);
+}
+
+/**
+ * "Necha kunga berilayotgani" maydoni (1, 2, 3, 5 yoki 10 kun).
+ * Ruxsat etilmagan qiymat kelganda $default qaytariladi.
+ */
+function offlineLoanDays(mixed $value, int $default = 3): int
+{
+    $days = filter_var($value, FILTER_VALIDATE_INT);
+
+    return ($days !== false && in_array($days, OFFLINE_DAY_OPTIONS, true)) ? $days : $default;
+}
+
+/**
+ * Offlayn berish formasi uchun umumiy input sinfi (oyna ichida ham,
+ * kitob sahifasida ham bir xil ko'rinishi uchun).
+ */
+function offlineFieldClass(): string
+{
+    return 'w-full border border-slate-300 rounded-md px-3 py-2 text-sm bg-white '
+         . 'focus:outline-none focus:ring-2 focus:ring-green-300';
+}
+
+/**
+ * Oflayn berish uchun tanlash maydoni: 1 / 2 / 3 / 5 / 10 kun.
+ * $name – POST maydoni nomi (process-offline.php shu nomdan o'qiydi).
+ */
+function renderOfflineDaysSelect(string $selectId, string $name = 'loan_days', int $default = 3): void
+{
+    ?>
+    <div class="space-y-1">
+        <label for="<?= e($selectId) ?>" class="block text-sm font-semibold text-slate-700">
+            Necha kunga berilmoqda?
+        </label>
+        <select id="<?= e($selectId) ?>" name="<?= e($name) ?>" required
+                class="<?= e(offlineFieldClass()) ?>">
+            <?php foreach (OFFLINE_DAY_OPTIONS as $day): ?>
+                <option value="<?= (int) $day ?>" <?= $day === $default ? 'selected' : '' ?>>
+                    <?= (int) $day ?> kun
+                </option>
+            <?php endforeach; ?>
+        </select>
+        <p class="text-xs text-slate-500">
+            ⚠️ Muddat tugagach kutubxonachi «Qaytarildi» deb belgilaydi.
+        </p>
+    </div>
+    <?php
+}
+
+/**
+ * ============================================================
+ *  OFFLAYN BERISH FORMASI (faqat kutubxonachi uchun)
+ *  POST → admin/process-offline.php (kitob ID'si book_id bilan)
+ *
+ *  Maydonlar: hemis_id, student_name, student_email, faculty,
+ *             group_name, loan_days + csrf_token + book_id.
+ *
+ *  $variant – HTML id/prefix (bitta sahifada ikkita forma bo'lsa
+ *             takrorlanmasligi uchun).
+ *  $title   – modul ichida sarlavha o'rniga ko'rsatiladi (kitob
+ *             sahifasida sarlavha kerak emas).
+ *  $backText – "Yopish" havolasi matni (bo'sh bo'lsa havola chiqmaydi).
+ * ============================================================
+ */
+function renderOfflineIssueForm(int $bookId, string $variant = 'modal', string $title = '', string $backText = ''): void
+{
+    if ($bookId < 1) {
+        return;
+    }
+
+    $fieldClass = offlineFieldClass();
+    ?>
+    <form method="post" action="<?= e(url('admin/process-offline.php')) ?>"
+          class="space-y-3 text-left" data-offline-form>
+        <?= csrfField() ?>
+        <input type="hidden" name="book_id" value="<?= (int) $bookId ?>">
+        <input type="hidden" name="from" value="<?= e($variant) ?>">
+
+        <?php if ($title !== ''): ?>
+            <p class="font-bold text-green-800"><?= e($title) ?></p>
+        <?php endif; ?>
+
+        <div class="space-y-1">
+            <label for="off_hemis_<?= e($variant) ?>" class="block text-sm font-semibold text-slate-700">
+                Talabaning HEMIS ID si
+            </label>
+            <input type="text" id="off_hemis_<?= e($variant) ?>" name="hemis_id" required
+                   maxlength="20" inputmode="numeric" autocomplete="off"
+                   placeholder="Masalan: 123456789012" class="<?= $fieldClass ?>">
+            <p class="text-xs text-slate-500">Faqat raqam (6 tadan 20 tagacha).</p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="space-y-1">
+                <label for="off_name_<?= e($variant) ?>" class="block text-sm font-semibold text-slate-700">
+                    Talaba FIO si
+                </label>
+                <input type="text" id="off_name_<?= e($variant) ?>" name="student_name" required
+                       maxlength="100" autocomplete="off"
+                       placeholder="Karimov Aziz Bahodirovich" class="<?= $fieldClass ?>">
+            </div>
+
+            <div class="space-y-1">
+                <label for="off_email_<?= e($variant) ?>" class="block text-sm font-semibold text-slate-700">
+                    Email adresi
+                </label>
+                <input type="email" id="off_email_<?= e($variant) ?>" name="student_email" required
+                       maxlength="150" autocomplete="off"
+                       placeholder="talaba@universitet.uz" class="<?= $fieldClass ?>">
+            </div>
+
+            <div class="space-y-1">
+                <label for="off_faculty_<?= e($variant) ?>" class="block text-sm font-semibold text-slate-700">
+                    Fakulteti
+                </label>
+                <input type="text" id="off_faculty_<?= e($variant) ?>" name="faculty" required
+                       maxlength="150" autocomplete="off"
+                       placeholder="Axborot texnologiyalari" class="<?= $fieldClass ?>">
+            </div>
+
+            <div class="space-y-1">
+                <label for="off_group_<?= e($variant) ?>" class="block text-sm font-semibold text-slate-700">
+                    Guruhi
+                </label>
+                <input type="text" id="off_group_<?= e($variant) ?>" name="group_name" required
+                       maxlength="30" autocomplete="off"
+                       placeholder="DI-21-01" class="<?= $fieldClass ?>">
+            </div>
+        </div>
+
+        <?php renderOfflineDaysSelect('off_loan_days_' . $variant, 'loan_days', 3); ?>
+
+        <button type="submit"
+                class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold rounded-md px-5 py-2.5">
+            Talabaga berish
+        </button>
+
+        <?php if ($backText !== ''): ?>
+            <button type="button" data-offline-back
+                    class="w-full text-sm text-slate-600 hover:text-slate-800 py-1">
+                ← <?= e($backText) ?>
+            </button>
+        <?php endif; ?>
+    </form>
     <?php
 }
 

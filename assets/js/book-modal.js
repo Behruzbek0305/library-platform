@@ -12,6 +12,11 @@
  *    - rasm to'liq ko'rinadi (kesilmaydi)
  *    - tugmalar foydalanuvchi holatiga qarab o'zgaradi:
  *        kirmagan / kutubxonachi / allaqachon band qilgan / bo'sh nusxa yo'q / band qilish
+ *    - 1-bosqich: kutubxonachi uchun "Faqat talabalar band qila oladi" degan
+ *      kulrang joyda yashil "Offlayn Registratsiya qilish" tugmasi chiqadi.
+ *      Bosilsa – shu oynaning ichida talaba ma'lumotlari formasi ochiladi
+ *      (HEMIS ID, FIO, email, fakultet, guruh, necha kunga) va POST orqali
+ *      admin/process-offline.php ga book_id bilan yuboriladi.
  *    - Esc, orqa fonga bosish yoki ✕ tugmasi oynani yopadi
  *    - Tab tugmasi oyna ichida aylanib yuradi, yopilganda fokus joyiga qaytadi
  *    - oyna ochiq paytda orqadagi sahifa aylanmaydi
@@ -42,9 +47,17 @@
     var pickupSelect = document.getElementById('modal_pickup_days');
     var moreLink     = document.getElementById('bookModalMore');
 
+    // Offlayn berish (faqat kutubxonachi) elementlari
+    var offlineBtn      = document.getElementById('bookModalOfflineBtn');
+    var offlineWarn     = document.getElementById('bookModalOfflineWarn');
+    var offlineBookIdEl = document.getElementById('bookModalOfflineBookId');
+    var offlineForm     = document.getElementById('bookModalOfflineForm');
+
     var role      = modal.getAttribute('data-role');   // guest | student | admin
     var stateEls  = modal.querySelectorAll('[data-state]');
     var lastFocus = null;                              // yopilganda fokus qaytadigan element
+
+    var currentAvailable = 0;                          // joriy kitobdagi bo'sh nusxalar (ogohlantirish uchun)
 
     // Fokus olishi mumkin bo'lgan elementlar (ko'rinmaydiganlari keyin filtrlanadi)
     var FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
@@ -72,11 +85,66 @@
         return 'reserve';
     }
 
+    /** Oyna ochilganda yoki "Orqaga" bosilganda: admin blokiga qaytadi */
+    function resetAdminView() {
+        showState('admin');
+        if (offlineWarn) {
+            offlineWarn.classList.toggle('hidden', currentAvailable > 0);
+        }
+    }
+
+    /** Kutubxonachi: kitob modalining ichida talaba ma'lumotlari formasini ochadi */
+    function openOfflineForm() {
+        var bookId = bookIdEl ? bookIdEl.value : '';
+
+        if (offlineBookIdEl) {
+            offlineBookIdEl.value = bookId;
+        }
+
+        // Bo'sh nusxa bo'lmasa – ogohlantirish ko'rsatamiz (forma baribir ochiladi)
+        if (offlineWarn) {
+            offlineWarn.classList.toggle('hidden', currentAvailable > 0);
+        }
+
+        showState('offline');
+
+        if (offlineForm) {
+            offlineForm.reset();
+            modal.scrollTop = 0;
+
+            var firstField = offlineForm.querySelector('input[name="hemis_id"]');
+            if (firstField) {
+                firstField.focus({ preventScroll: true });
+            }
+        }
+    }
+
+    /** HEMIS ID maydonida faqat raqam qoldiramiz (bo'shliq va harflar o'chiriladi) */
+    function bindHemisFilter(form) {
+        if (!form) {
+            return;
+        }
+
+        var field = form.querySelector('input[name="hemis_id"]');
+        if (!field) {
+            return;
+        }
+
+        field.addEventListener('input', function () {
+            var cleaned = field.value.replace(/\D+/g, '');
+            if (cleaned !== field.value) {
+                field.value = cleaned;
+            }
+        });
+    }
+
     /** Oynani kartochkadagi ma'lumotlar bilan to'ldiradi */
     function fill(card) {
         var data      = card.dataset;
         var available = parseInt(data.available, 10) || 0;
         var copies    = parseInt(data.copies, 10) || 0;
+
+        currentAvailable = available;
 
         titleEl.textContent    = data.title || '';
         authorEl.textContent   = data.author || '';
@@ -119,6 +187,14 @@
         lastFocus = document.activeElement;
         fill(card);
 
+        // Har safar ochilganda forma tozalangan holda, admin blokidagi tugma ko'rinadi
+        if (offlineForm) {
+            offlineForm.reset();
+        }
+        if (role === 'admin') {
+            resetAdminView();
+        }
+
         modal.inert = false;
         modal.classList.remove('opacity-0', 'pointer-events-none');
         modal.classList.add('opacity-100');
@@ -157,6 +233,51 @@
     });
 
     closeBtn.addEventListener('click', closeModal);
+
+    // ====== Oflayn berish: yashil tugma ↔ talaba formasi (faqat admin) ======
+    if (offlineBtn) {
+        offlineBtn.addEventListener('click', openOfflineForm);
+    }
+
+    // Modal ichida "✕" va "← Orqaga" tugmalari formani yopib, yana yashil tugmani ko'rsatadi
+    modal.addEventListener('click', function (event) {
+        var back = event.target.closest('[data-offline-back]');
+        if (back && role === 'admin') {
+            resetAdminView();
+        }
+    });
+
+    bindHemisFilter(offlineForm);
+
+    // ====== Kitob sahifasidagi (modal tashqarisidagi) offlayn forma ======
+    var pageToggle = document.getElementById('pageOfflineToggle');
+    var pageForm   = document.getElementById('pageOfflineForm');
+
+    if (pageToggle && pageForm) {
+        pageForm.classList.add('hidden');      // JS bor: forma avval yopiq bo'ladi
+
+        pageToggle.addEventListener('click', function () {
+            var show = pageForm.classList.toggle('hidden') === false;
+
+            if (show) {
+                pageForm.scrollIntoView({ block: 'nearest' });
+
+                var firstField = pageForm.querySelector('input[name="hemis_id"]');
+                if (firstField) {
+                    firstField.focus({ preventScroll: true });
+                }
+            }
+        });
+
+        pageForm.addEventListener('click', function (event) {
+            if (event.target.closest('[data-offline-back]')) {
+                pageForm.classList.add('hidden');
+                pageToggle.focus({ preventScroll: true });
+            }
+        });
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-offline-form]'), bindHemisFilter);
 
     // Orqa (qoraytirilgan) fonga bosilsa – yopamiz; oyna ichiga bosilsa – yopilmaydi
     modal.addEventListener('click', function (event) {

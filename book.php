@@ -56,6 +56,10 @@ if ($user !== null && $user['role'] === 'talaba') {
 $available = (int) $book['available'];
 $style     = categoryStyle((string) $book['category']);
 
+// JavaScript qo'shilgan bo'lsa, offlayn forma yopiq holda ochiladi (tugma orqali).
+// Yo'q bo'lsa – forma darhol ko'rinadi, chunki uni ochadigan skript yo'q.
+$hasJs = is_readable(__DIR__ . '/assets/js/book-modal.js');
+
 // ------------------------------------------------------------
 // 3. SAHIFANI CHIZISH
 // ------------------------------------------------------------
@@ -101,7 +105,33 @@ require_once __DIR__ . '/includes/header.php';
                 </p>
 
             <?php elseif ($user['role'] !== 'talaba'): ?>
-                <p class="text-sm text-slate-500">Kitoblarni faqat talabalar band qila oladi.</p>
+                <!-- ====== Kutubxonachi: offlayn berish (1-bosqich) ======
+                     JS yonimagan sahifada forma darhol ochiq ko'rinadi -->
+                <div class="max-w-md space-y-3" data-offline-block>
+                    <button type="button" id="pageOfflineToggle"
+                            class="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white font-semibold rounded-md px-5 py-2.5">
+                        Offlayn Registratsiya qilish
+                    </button>
+
+                    <?php if ($available <= 0): ?>
+                        <p class="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                            Hozir bo'sh nusxa ko'rinmayapti. Baribir berilsa, keyinroq qaytarilgan deb belgilang.
+                        </p>
+                    <?php endif; ?>
+
+                    <div id="pageOfflineForm" class="<?= $hasJs ? 'hidden' : '' ?> border border-green-200 bg-green-50/60 rounded-lg p-4">
+                        <div class="flex items-start justify-between gap-2 mb-1">
+                            <h2 class="font-bold text-green-800 leading-snug">Kitobni talabaga berish (offlayn)</h2>
+                            <button type="button" data-offline-back aria-label="Yopish"
+                                    class="shrink-0 rounded-full w-7 h-7 text-slate-500 hover:bg-white">✕</button>
+                        </div>
+                        <p class="text-xs text-slate-600 mb-3">
+                            Talaba onlayn band qilmagan – uni kutubxonachi qo'lda kiritadi.
+                        </p>
+
+                        <?php renderOfflineIssueForm((int) $book['id'], 'page'); ?>
+                    </div>
+                </div>
 
             <?php elseif ($alreadyBooked): ?>
                 <p class="text-sm text-green-700 bg-green-50 border border-green-300 rounded-md px-3 py-2 inline-block">
