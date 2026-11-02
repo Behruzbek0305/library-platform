@@ -241,8 +241,8 @@ $hasBookModalJs = is_readable(__DIR__ . '/../assets/js/book-modal.js');
         </script>
     <?php endif; ?>
 
-    <script src="<?= e($jsBase . 'assets/js/menu.js') ?>" defer></script>
-    <script src="<?= e($jsBase . 'assets/js/live-search.js') ?>" defer></script>
-    <script src="<?= e($jsBase . 'assets/js/book-modal.js') ?>" defer></script>
+    <script src="<?= e(url('assets/js/menu.js')) ?>" defer></script>
+    <script src="<?= e(url('assets/js/live-search.js')) ?>" defer></script>
+    <script src="<?= e(url('assets/js/book-modal.js')) ?>" defer></script>
 </body>
 </html>
