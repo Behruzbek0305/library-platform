@@ -59,6 +59,43 @@
 
     var currentAvailable = 0;                          // joriy kitobdagi bo'sh nusxalar (ogohlantirish uchun)
 
+    // ============================================================
+    //  OFFLAYN FORMA MANZILI (admin/process-offline.php)
+    //  HTML'da action="..." hamma vaqtda to'g'ri yozilgan, lekin
+    //  brauzer eski cache'dagi HTML'ni ko'rsatsa yoki sahifani
+    //  boshqa papkadan ochsa – forma manzili buzilishi mumkin.
+    //  Shuning uchun JS uni tekshiradi va kerak bo'lsa tiklaydi.
+    // ============================================================
+    function offlineEndpoint() {
+        if (offlineForm && offlineForm.getAttribute('data-endpoint')) {
+            return offlineForm.getAttribute('data-endpoint');
+        }
+        var host = modal.querySelector('[data-offline-endpoint]');
+        if (host && host.getAttribute('data-offline-endpoint')) {
+            return host.getAttribute('data-offline-endpoint');
+        }
+        return '';
+    }
+
+    /** Forma action'ini to'g'rilaydi; noto'g'ri bo'lsa konsolga yozadi */
+    function ensureOfflineAction() {
+        if (!offlineForm) {
+            return;
+        }
+
+        var want = offlineEndpoint();
+        if (!want) {
+            console.warn('[Kutubxona-ARM] Offlayn forma manzili topilmadi (data-endpoint / data-offline-endpoint).');
+            return;
+        }
+
+        var have = offlineForm.getAttribute('action') || '';
+        if (have !== want) {
+            console.info('[Kutubxona-ARM] Forma action\'i tuzatildi: "' + have + '" → "' + want + '"');
+            offlineForm.setAttribute('action', want);
+        }
+    }
+
     // Fokus olishi mumkin bo'lgan elementlar (ko'rinmaydiganlari keyin filtrlanadi)
     var FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 
@@ -95,7 +132,20 @@
 
     /** Kutubxonachi: kitob modalining ichida talaba ma'lumotlari formasini ochadi */
     function openOfflineForm() {
+        // Formani ochishga ruxsat: faqat kutubxonachi uchun
+        if (role !== 'admin') {
+            return;
+        }
+
         var bookId = bookIdEl ? bookIdEl.value : '';
+
+        // Kitob ID'si qo'ymasdan forma yuborilmasin
+        if (!bookId) {
+            console.warn('[Kutubxona-ARM] book_id topilmadi – oyna kartochkadagi data-id dan olinmagan.');
+        }
+
+        // Forma manzili to'g'rimi? Kerak bo'lsa tiklaymiz.
+        ensureOfflineAction();
 
         if (offlineBookIdEl) {
             offlineBookIdEl.value = bookId;
@@ -110,12 +160,23 @@
 
         if (offlineForm) {
             offlineForm.reset();
+
+            // reset() yashirin maydonni ham tozalashi mumkin – qaytaramiz
+            if (offlineBookIdEl) {
+                offlineBookIdEl.value = bookId;
+            }
+
             modal.scrollTop = 0;
 
             var firstField = offlineForm.querySelector('input[name="hemis_id"]');
             if (firstField) {
                 firstField.focus({ preventScroll: true });
             }
+
+            console.info('[Kutubxona-ARM] Offlayn forma ochildi. book_id=' + bookId +
+                         ', manzil=' + (offlineForm.getAttribute('action') || '(yo\'q)'));
+        } else {
+            console.error('[Kutubxona-ARM] #bookModalOfflineForm element topilmadi – HTML yangilanmagan.');
         }
     }
 
@@ -192,6 +253,7 @@
             offlineForm.reset();
         }
         if (role === 'admin') {
+            ensureOfflineAction();   // forma manzilini oldindan tekshiramiz
             resetAdminView();
         }
 
@@ -237,6 +299,8 @@
     // ====== Oflayn berish: yashil tugma ↔ talaba formasi (faqat admin) ======
     if (offlineBtn) {
         offlineBtn.addEventListener('click', openOfflineForm);
+    } else if (role === 'admin') {
+        console.error('[Kutubxona-ARM] #bookModalOfflineBtn topilmadi – footer.php yangilanmagan.');
     }
 
     // Modal ichida "✕" va "← Orqaga" tugmalari formani yopib, yana yashil tugmani ko'rsatadi
@@ -249,6 +313,56 @@
 
     bindHemisFilter(offlineForm);
 
+    // ============================================================
+    //  "Talabaga berish" bosilganda – POST haqiqatan ketadi.
+    //  Muammo: serverda admin/process-offline.php hali yo'q bo'lsa,
+    //  forma o'z-o'zidan jo'naydi, lekin brauzer 404 sahifasini
+    //  ko'rsatadi ("hech narsa bo'lmagandek" tuyuladi).
+    //  Yechim: JS fetch() orqali tekshiradi va aniq xabar beradi;
+    //  fayl bo'lsa – forma avvalgidek oddiy POST bilan jo'naydi.
+    // ============================================================
+    function bindOfflineSubmit(form) {
+        if (!form || form.dataset.offlineBound === '1') {
+            return;
+        }
+        form.dataset.offlineBound = '1';
+
+        form.addEventListener('submit', function (event) {
+            var endpoint = form.getAttribute('action') || offlineEndpoint();
+
+            if (!endpoint) {
+                event.preventDefault();
+                alert("Offlayn berish manzili sozlanmagan: forma 'admin/process-offline.php' ga yuborilishi kerak.");
+                return;
+            }
+
+            var bookIdField = form.querySelector('input[name="book_id"]');
+            if (!bookIdField || !bookIdField.value) {
+                event.preventDefault();
+                alert('Kitob ID\'si (book_id) kiritilmadi. Sahifani yangilab, qaytadan urinib ko\'ring.');
+                return;
+            }
+
+            // Server javobini oldindan bilib turamiz: process-offline.php tayyor
+            // bo'lmasa foydalanuvchiga tushunarli ogohlantirish beramiz.
+            // (Bu tekshiruv faqat ma'lumot uchun – forma baribir POST bo'ladi.)
+            if (window.fetch) {
+                window.fetch(endpoint, { method: 'HEAD', credentials: 'same-origin' })
+                    .then(function (res) {
+                        if (res.status === 404) {
+                            console.warn('[Kutubxona-ARM] ' + endpoint + ' topilmadi (404). Bu fayl 2-bosqichda yaratiladi.');
+                        }
+                    })
+                    .catch(function () { /* tarmoq xatosi – e'tibor bermaymiz */ });
+            }
+
+            console.info('[Kutubxona-ARM] Forma POST bo\'lmoqda → ' + endpoint +
+                         ' (book_id=' + bookIdField.value + ')');
+        });
+    }
+
+    bindOfflineSubmit(offlineForm);
+
     // ====== Kitob sahifasidagi (modal tashqarisidagi) offlayn forma ======
     var pageToggle = document.getElementById('pageOfflineToggle');
     var pageForm   = document.getElementById('pageOfflineForm');
@@ -260,9 +374,11 @@
             var show = pageForm.classList.toggle('hidden') === false;
 
             if (show) {
-                pageForm.scrollIntoView({ block: 'nearest' });
+                var pf = pageForm.querySelector('form[data-offline-form]') || pageForm;
+                ensurePageOfflineAction(pf);
+                pf.scrollIntoView({ block: 'nearest' });
 
-                var firstField = pageForm.querySelector('input[name="hemis_id"]');
+                var firstField = pf.querySelector('input[name="hemis_id"]');
                 if (firstField) {
                     firstField.focus({ preventScroll: true });
                 }
@@ -277,7 +393,22 @@
         });
     }
 
-    Array.prototype.forEach.call(document.querySelectorAll('[data-offline-form]'), bindHemisFilter);
+    /** Kitob sahifasidagi forma action'ini ham tekshiradi */
+    function ensurePageOfflineAction(form) {
+        if (!form || !form.setAttribute) {
+            return;
+        }
+        var want = form.getAttribute('data-endpoint') || offlineEndpoint();
+        if (want && (form.getAttribute('action') || '') !== want) {
+            console.info('[Kutubxona-ARM] Sahifa formasi action\'i tuzatildi → ' + want);
+            form.setAttribute('action', want);
+        }
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-offline-form]'), function (form) {
+        bindHemisFilter(form);
+        bindOfflineSubmit(form);
+    });
 
     // Orqa (qoraytirilgan) fonga bosilsa – yopamiz; oyna ichiga bosilsa – yopilmaydi
     modal.addEventListener('click', function (event) {

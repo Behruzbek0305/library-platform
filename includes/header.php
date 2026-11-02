@@ -53,6 +53,18 @@ $flashColors = [
     'error'   => 'bg-red-50 text-red-800 border-red-300',
     'info'    => 'bg-blue-50 text-blue-800 border-blue-300',
 ];
+
+// ============================================================
+//  JAVASCRIPT YO'LI – eng tepada, <head> ichida hisoblanadi.
+//  Sabab: sahifaning istalgan joyida (modal, kitob kartochkasi)
+//  to'g'ri manzil kerak. Papka chuqurligiga qarab avtomatik
+//  "assets/..." yoki "../assets/..." bo'ladi.
+// ============================================================
+if (!isset($jsBase)) {
+    $jsBase = scriptDirDepth() > 1 ? '../' : '';
+}
+$bookModalJsPath = __DIR__ . '/../assets/js/book-modal.js';
+$hasBookModalJs  = is_readable($bookModalJsPath);
 ?>
 <!DOCTYPE html>
 <html lang="uz">
@@ -64,6 +76,10 @@ $flashColors = [
 
     <!-- Tailwind CSS (CDN orqali) -->
     <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- book-modal.js qayerda turishi (F12 → Console da ko'rinadi).
+         Agar brauzer bu faylni 404 qaytarsa, modal umuman ishlamaydi. -->
+    <?php debugConsole('BASE_URL: ' . BASE_URL . ' | kitob oynasi skripti: ' . $jsBase . 'assets/js/book-modal.js'); ?>
 </head>
 <body class="min-h-screen flex flex-col bg-slate-100 text-slate-800">
 

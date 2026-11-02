@@ -426,6 +426,10 @@ function renderOfflineDaysSelect(string $selectId, string $name = 'loan_days', i
  *  $title   – modul ichida sarlavha o'rniga ko'rsatiladi (kitob
  *             sahifasida sarlavha kerak emas).
  *  $backText – "Yopish" havolasi matni (bo'sh bo'lsa havola chiqmaydi).
+ *
+ *  MUHIM: forma har doim to'liq yo'l bilan ochiladi va tekshiriladi:
+ *    - action="..." atributi qo'yilganmi (JS tashqarisidagi bloklar ham)
+ *    - bo'sh nusxa bor-yo'qligidan qat'i narp ishlaydi
  * ============================================================
  */
 function renderOfflineIssueForm(int $bookId, string $variant = 'modal', string $title = '', string $backText = ''): void
@@ -437,7 +441,8 @@ function renderOfflineIssueForm(int $bookId, string $variant = 'modal', string $
     $fieldClass = offlineFieldClass();
     ?>
     <form method="post" action="<?= e(url('admin/process-offline.php')) ?>"
-          class="space-y-3 text-left" data-offline-form>
+          class="space-y-3 text-left" data-offline-form
+          data-endpoint="<?= e(url('admin/process-offline.php')) ?>">
         <?= csrfField() ?>
         <input type="hidden" name="book_id" value="<?= (int) $bookId ?>">
         <input type="hidden" name="from" value="<?= e($variant) ?>">

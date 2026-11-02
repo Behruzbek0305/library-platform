@@ -14,21 +14,56 @@ date_default_timezone_set('Asia/Tashkent');
 
 // ------------------------------------------------------------
 // 1. SAYT MANZILI (BASE_URL)
-//    Loyiha /srv/http/library-platform/ ichida turgani uchun
-//    brauzerdagi manzil: http://localhost/library-platform/
-//    Agar papka nomini o'zgartirsangiz, faqat shu qatorni o'zgartiring.
+//    Bu – loyihaning brauzerdagi papka manzili. Avtomatik aniqlanadi:
+//      .../htdocs/kutubxona_arm/index.php  → BASE_URL = '/kutubxona_arm'
+//      .../htdocs/library/public/index.php → BASE_URL = '/library/public'
+//      http://localhost:8000/index.php     → BASE_URL = ''
+//    XAMPP'da papkangiz nomi nima bo'lishidan qat'i narp ishlaydi.
+//    Qo'lda belgilamoqchi bo'lsangiz, config/db.php ichiga
+//    define('BASE_URL', '/sizning-papka'); qatorini yozing.
 // ------------------------------------------------------------
 if (!defined('BASE_URL')) {
-    define('BASE_URL', '/library-platform');
+    $baseDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/'));
+    if ($baseDir !== '/' && $baseDir !== '') {
+        $baseDir = rtrim($baseDir, '/');
+    } else {
+        $baseDir = '';
+    }
+    define('BASE_URL', $baseDir);
 }
 
 /**
  * Sayt ichidagi to'liq yo'lni qaytaradi.
- * Misol: url('login.php') → /library-platform/login.php
+ * Misol (BASE_URL='/kutubxona_arm'): url('login.php') → /kutubxona_arm/login.php
+ * Misol (BASE_URL=''):               url('login.php') → /login.php
  */
 function url(string $path = ''): string
 {
     return BASE_URL . '/' . ltrim($path, '/');
+}
+
+/**
+ * Papkalar sonini qaytaradi: 0 – papka ichida emas, 1 – bitta papkada...
+ * Misol: /xampp/kutubxona_arm/admin/books.php bo'lsa SCRIPT_NAME'dan
+ *        "admin" papkasidan tashqariga chiqish kerakligi bilinadi.
+ */
+function scriptDirDepth(): int
+{
+    $dir = trim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+
+    return $dir === '' ? 0 : substr_count($dir, '/') + 1;
+}
+
+/**
+ * Sahifani brauzer konsoliga xabar yozdirdi (F12 → Console).
+ * Matn HTML'ga JSON ko'rinishida joylanadi, shuning uchun < / > belgilari
+ * ajratib yoziladi (skript ichida </script> bo'lib ketmasligi uchun).
+ */
+function debugConsole(string $message): void
+{
+    echo '<script>console.info('
+        . str_replace(['<', '>'], ['\\u003c', '\\u003e'], json_encode('[Kutubxona-ARM] ' . $message, JSON_UNESCAPED_UNICODE | JSON_HEX_AMP))
+        . ');</script>' . "\n";
 }
 
 /**
