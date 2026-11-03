@@ -8,6 +8,13 @@
  *
  *  Muqova rasmi: JPG, PNG yoki WEBP, eng ko'pi 2 MB.
  *  Rasm uploads/covers/ papkasiga tasodifiy nom bilan saqlanadi.
+ *
+ *  3-bosqich: kitobga SOHA (field) va JANR (genre) kiritish qo'shildi.
+ *  Bu maydonlar index.php va catalog.php dagi filtrlar uchun kerak.
+ *  Ikkalasi ixtiyoriy; bo'sh qoldirilsa bazaga NULL yoziladi.
+ *  Maydonlar <datalist> bilan: mavjud qiymatlardan tanlash yoki yangisini yozish mumkin.
+ *
+ *  Eslatma: avval migrations/007_field_genre.sql ni ishga tushiring.
  * ============================================================
  */
 
@@ -50,10 +57,34 @@ $form = [
     'title'       => $book['title']       ?? '',
     'author'      => $book['author']      ?? '',
     'category'    => $book['category']    ?? BOOK_CATEGORIES[0],
+    'field'       => $book['field']       ?? '',
+    'genre'       => $book['genre']       ?? '',
     'copies'      => (string) ($book['copies'] ?? 1),
     'description' => $book['description'] ?? '',
 ];
 $errors = [];
+
+// ------------------------------------------------------------
+// 1.1. SOHA VA JANR TAVSIYALARI (datalist uchun)
+//      Bazada allaqachon bor qiymatlar – bir xil nomni har xil yozib
+//      yuborishning oldini olish uchun.
+// ------------------------------------------------------------
+$fieldSuggestions = [];
+$genreSuggestions = [];
+try {
+    $fieldSuggestions = $pdo->query(
+        "SELECT DISTINCT `field` FROM books
+         WHERE `field` IS NOT NULL AND `field` <> '' ORDER BY `field`"
+    )->fetchAll(PDO::FETCH_COLUMN);
+
+    $genreSuggestions = $pdo->query(
+        "SELECT DISTINCT genre FROM books
+         WHERE genre IS NOT NULL AND genre <> '' ORDER BY genre"
+    )->fetchAll(PDO::FETCH_COLUMN);
+} catch (PDOException $ex) {
+    // Tavsiyalar bo'lmasa ham forma ishlayveradi (007-migratsiya qilinmagan bo'lishi mumkin)
+    error_log('[Kutubxona-ARM] Soha/janr tavsiyalarida xatolik: ' . $ex->getMessage());
+}
 
 // ------------------------------------------------------------
 // 2. FORMA YUBORILGANDA (POST)
@@ -63,10 +94,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrfVerify($_POST['csrf_token'] ?? null)) {
         $errors[] = "Sessiya muddati tugagan. Sahifani yangilab, qayta urinib ko'ring.";
     } else {
-        // 2.1. Matn maydonlarini olamiz
+        // 2.1. Matn maydonlarini olamiz (ortiqcha bo'shliqlar tozalanadi)
         $form['title']       = trim((string) ($_POST['title'] ?? ''));
         $form['author']      = trim((string) ($_POST['author'] ?? ''));
         $form['category']    = (string) ($_POST['category'] ?? '');
+        $form['field']       = trim((string) preg_replace('/\s+/u', ' ', (string) ($_POST['field'] ?? '')));
+        $form['genre']       = trim((string) preg_replace('/\s+/u', ' ', (string) ($_POST['genre'] ?? '')));
         $form['copies']      = trim((string) ($_POST['copies'] ?? ''));
         $form['description'] = trim((string) ($_POST['description'] ?? ''));
 
@@ -79,6 +112,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if (!in_array($form['category'], BOOK_CATEGORIES, true)) {
             $errors[] = "Kategoriya noto'g'ri tanlangan.";
+        }
+
+        // Soha va janr ixtiyoriy, lekin yozilsa 100 belgidan oshmasin
+        if (mb_strlen($form['field']) > 100) {
+            $errors[] = "Soha 100 belgidan oshmasin.";
+        }
+        if (mb_strlen($form['genre']) > 100) {
+            $errors[] = "Janr 100 belgidan oshmasin.";
         }
 
         $copies = filter_var($form['copies'], FILTER_VALIDATE_INT);
@@ -128,55 +169,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // 2.4. Xatolik bo'lmasa – saqlaymiz
-        if (!$errors) {
-            $newCoverPath = null;   // bazaga yoziladigan yangi rasm yo'li
+        // 2.4. Xatolik bo'lmasa – rasmni diskka ko'chiramiz
+        $newCoverPath = null;   // bazaga yoziladigan yangi rasm yo'li
 
-            // Rasmni diskka ko'chiramiz
-            if ($coverTmp !== null) {
-                $dir = __DIR__ . '/../' . COVER_DIR_REL;
-                if (!is_dir($dir)) {
-                    @mkdir($dir, 0775, true);
-                }
+        if (!$errors && $coverTmp !== null) {
+            $dir = __DIR__ . '/../' . COVER_DIR_REL;
+            if (!is_dir($dir)) {
+                @mkdir($dir, 0775, true);
+            }
 
-                $fileName = bin2hex(random_bytes(8)) . '.' . $coverExt;   // tasodifiy nom
+            $fileName = bin2hex(random_bytes(8)) . '.' . $coverExt;   // tasodifiy nom
 
-                if (@move_uploaded_file($coverTmp, $dir . '/' . $fileName)) {
-                    $newCoverPath = COVER_DIR_REL . '/' . $fileName;
-                } else {
-                    $errors[] = "Rasmni saqlab bo'lmadi. uploads/covers papkasiga yozish ruxsatini tekshiring.";
-                }
+            if (@move_uploaded_file($coverTmp, $dir . '/' . $fileName)) {
+                $newCoverPath = COVER_DIR_REL . '/' . $fileName;
+            } else {
+                $errors[] = "Rasmni saqlab bo'lmadi. uploads/covers papkasiga yozish ruxsatini tekshiring.";
             }
         }
 
+        // 2.5. Hammasi joyida bo'lsa – bazaga yozamiz
         if (!$errors) {
-                try {
+            // Bo'sh soha/janr bazaga NULL bo'lib yoziladi
+            $fieldValue = $form['field'] !== '' ? $form['field'] : null;
+            $genreValue = $form['genre'] !== '' ? $form['genre'] : null;
+
+            try {
                 // 6-bosqich: available_copies ustuni bormi?
                 $col = $pdo->query(
                     "SELECT COUNT(*) FROM information_schema.COLUMNS
-                    WHERE TABLE_SCHEMA = DATABASE()
-                        AND TABLE_NAME   = 'books'
-                        AND COLUMN_NAME  = 'available_copies'"
+                     WHERE TABLE_SCHEMA = DATABASE()
+                       AND TABLE_NAME   = 'books'
+                       AND COLUMN_NAME  = 'available_copies'"
                 )->fetchColumn();
                 $hasAvailable = (int) $col > 0;
 
                 if ($isEdit) {
                     // DIQQAT: har bir nomli parametr so'rovda faqat BIR marta uchrashi kerak
-                    // (ATTR_EMULATE_PREPARES = false bo'lgani uchun), shu sababli :copies_avail alohida.
+                    // (ATTR_EMULATE_PREPARES = false), shu sababli :copies_avail alohida.
                     $stmt = $pdo->prepare(
                         'UPDATE books
-                        SET title = :title, author = :author, category = :category,
-                            description = :description, copies = :copies,
-                            cover_image = :cover_image'
-                            . ($hasAvailable
-                            ? ', available_copies = GREATEST(0, :copies_avail - :active_count)'
-                            : '')
-                            . ' WHERE id = :id'
+                         SET title = :title, author = :author, category = :category,
+                             `field` = :field, genre = :genre,
+                             description = :description, copies = :copies,
+                             cover_image = :cover_image'
+                             . ($hasAvailable
+                                ? ', available_copies = GREATEST(0, :copies_avail - :active_count)'
+                                : '')
+                             . ' WHERE id = :id'
                     );
                     $params = [
                         ':title'       => $form['title'],
                         ':author'      => $form['author'],
                         ':category'    => $form['category'],
+                        ':field'       => $fieldValue,
+                        ':genre'       => $genreValue,
                         ':description' => $form['description'] !== '' ? $form['description'] : null,
                         ':copies'      => $copies,
                         ':cover_image' => $newCoverPath ?? $book['cover_image'],
@@ -200,6 +246,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':title'       => $form['title'],
                         ':author'      => $form['author'],
                         ':category'    => $form['category'],
+                        ':field'       => $fieldValue,
+                        ':genre'       => $genreValue,
                         ':description' => $form['description'] !== '' ? $form['description'] : null,
                         ':cover_image' => $newCoverPath,
                         ':copies'      => $copies,
@@ -207,15 +255,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     if ($hasAvailable) {
                         $stmt = $pdo->prepare(
-                            'INSERT INTO books (title, author, category, description, cover_image, copies, available_copies)
-                            VALUES (:title, :author, :category, :description, :cover_image, :copies, :copies_avail)'
+                            'INSERT INTO books (title, author, category, `field`, genre, description, cover_image, copies, available_copies)
+                             VALUES (:title, :author, :category, :field, :genre, :description, :cover_image, :copies, :copies_avail)'
                         );
                         // Yangi kitobda hamma nusxa bo'sh
                         $params[':copies_avail'] = $copies;
                     } else {
                         $stmt = $pdo->prepare(
-                            'INSERT INTO books (title, author, category, description, cover_image, copies)
-                            VALUES (:title, :author, :category, :description, :cover_image, :copies)'
+                            'INSERT INTO books (title, author, category, `field`, genre, description, cover_image, copies)
+                             VALUES (:title, :author, :category, :field, :genre, :description, :cover_image, :copies)'
                         );
                     }
                     $stmt->execute($params);
@@ -225,12 +273,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 redirect('admin/books.php');
 
-
             } catch (PDOException $ex) {
                 // Baza xatosi bo'lsa, yuklangan rasm yetim qolmasligi uchun o'chiramiz
                 deleteCoverFile($newCoverPath);
                 error_log('[Kutubxona-ARM] Kitobni saqlashda xatolik: ' . $ex->getMessage());
-                $errors[] = "Kitobni saqlashda xatolik yuz berdi. Keyinroq urinib ko'ring.";
+                $errors[] = "Kitobni saqlashda xatolik yuz berdi. (007-migratsiya ishga tushirilganmi?)";
             }
         }
     }
@@ -280,6 +327,36 @@ $formAction = 'admin/book_form.php' . ($isEdit ? '?id=' . (int) $id : '');
                 <option value="<?= e($cat) ?>" <?= $cat === $form['category'] ? 'selected' : '' ?>><?= e($cat) ?></option>
             <?php endforeach; ?>
         </select>
+
+        <!-- Soha va janr yonma-yon (telefonda ketma-ket) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-3">
+            <div>
+                <label for="field" class="block text-sm font-bold mt-3 mb-1">Soha (ixtiyoriy)</label>
+                <input type="text" id="field" name="field" value="<?= e($form['field']) ?>" maxlength="100"
+                       list="fieldList" autocomplete="off" placeholder="Masalan: IT"
+                       class="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300">
+                <datalist id="fieldList">
+                    <?php foreach ($fieldSuggestions as $opt): ?>
+                        <option value="<?= e($opt) ?>"></option>
+                    <?php endforeach; ?>
+                </datalist>
+            </div>
+
+            <div>
+                <label for="genre" class="block text-sm font-bold mt-3 mb-1">Janr (ixtiyoriy)</label>
+                <input type="text" id="genre" name="genre" value="<?= e($form['genre']) ?>" maxlength="100"
+                       list="genreList" autocomplete="off" placeholder="Masalan: Roman"
+                       class="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300">
+                <datalist id="genreList">
+                    <?php foreach ($genreSuggestions as $opt): ?>
+                        <option value="<?= e($opt) ?>"></option>
+                    <?php endforeach; ?>
+                </datalist>
+            </div>
+        </div>
+        <p class="text-xs text-slate-500 mt-1">
+            Ro'yxatdan tanlang yoki yangisini yozing. Katalogdagi filtrlar shu qiymatlardan foydalanadi.
+        </p>
 
         <label for="copies" class="block text-sm font-bold mt-3 mb-1">Nusxalar soni</label>
         <input type="number" id="copies" name="copies" value="<?= e($form['copies']) ?>" min="1" max="1000" required
