@@ -8,6 +8,9 @@
  *
  *  4-bosqich: kitob qachon berilgani (picked_up_at) va qachon
  *  qaytarilgani (returned_at) ham ko'rsatiladi.
+ *
+ *  Takomillashtirish 1-bosqich: so'rovga xizmat ko'rsatgan kutubxonachi
+ *  (reservations.served_by) "Mas'ul xodim" sifatida ko'rsatiladi.
  * ============================================================
  */
 
@@ -98,9 +101,11 @@ try {
     $stmt = $pdo->prepare(
         'SELECT r.id, r.reserved_date, r.pickup_days, r.pickup_deadline, r.status,
                 r.picked_up_at, r.returned_at,
-                b.id AS book_id, b.title, b.author
+                b.id AS book_id, b.title, b.author,
+                staff.name AS staff_name
          FROM reservations r
          JOIN books b ON b.id = r.book_id
+         LEFT JOIN users staff ON r.served_by = staff.id
          WHERE r.user_id = :user_id
          ORDER BY r.created_at DESC, r.id DESC'
     );
@@ -220,6 +225,8 @@ require_once __DIR__ . '/includes/header.php';
                             <?php if (!empty($r['returned_at'])): ?>
                                 <div class="text-slate-700 mt-0.5">Qaytargan vaqtingiz: <b><?= e(formatDateTime((string) $r['returned_at'])) ?></b></div>
                             <?php endif; ?>
+                            <!-- Mas'ul xodim (served_by) -->
+                            <?php renderStaffLine($r['staff_name'] ?? null); ?>
                         </td>
                         <td class="px-4 py-3"><?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? '')) ?></td>
                         <td class="px-4 py-3 text-right">
@@ -278,6 +285,8 @@ require_once __DIR__ . '/includes/header.php';
                     <?php if (!empty($r['returned_at'])): ?>
                         <div class="text-slate-700">Qaytargan vaqtingiz: <b><?= e(formatDateTime((string) $r['returned_at'])) ?></b></div>
                     <?php endif; ?>
+                    <!-- Mas'ul xodim (served_by) -->
+                    <?php renderStaffLine($r['staff_name'] ?? null); ?>
                 </div>
 
                 <?php if ($r['status'] === 'kutilmoqda'): ?>

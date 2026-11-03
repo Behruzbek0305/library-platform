@@ -17,7 +17,8 @@
  *      (role='talaba') yaratiladi va user_id olinadi.
  *   2. BAND QILISHNI SAQLASH – reservations ga yozuv:
  *      status='tasdiqlandi', picked_up_at=NOW(), is_offline=1,
- *      due_date = NOW() + X kun (loan_days), expires_at = due_date.
+ *      due_date = NOW() + X kun (loan_days), expires_at = due_date,
+ *      served_by = joriy kutubxonachi ID si ($_SESSION['user_id']).
  *   3. REAL-TIME KAMAYTIRISH – books.available_copies ni 1 taga
  *      kamaytirish: UPDATE ... AND available_copies > 0 (bu jadvalda
  *      ustun bo'lmasa avtomatik SKIP qilinadi – nusxa soni BOOK_SELECT
@@ -195,6 +196,9 @@ try {
     $now      = date('Y-m-d H:i:s');
     $dueDate  = date('Y-m-d H:i:s', strtotime("+{$days} days"));
 
+    // Xizmat ko'rsatgan xodim: hozir tizimda turgan kutubxonachi (requireAdmin() yuqorida tekshirgan)
+    $staffId  = (int) ($_SESSION['user_id'] ?? 0);
+
     // Bazada expires_at ustuni bormi? (so'ralgan: expires_at = NOW() + INTERVAL X DAY)
     $col = $pdo->query(
         "SELECT COUNT(*) FROM information_schema.COLUMNS
@@ -207,21 +211,20 @@ try {
     if ($hasExpiresAt) {
         $sql = "INSERT INTO reservations
                     (user_id, book_id, reserved_date, pickup_days, pickup_deadline,
-                     status, picked_up_at, due_date, expires_at, loan_days, is_offline)
+                     status, picked_up_at, due_date, expires_at, loan_days, is_offline, served_by)
                 VALUES
                     (:user_id, :book_id, :reserved_date, :pickup_days, :pickup_deadline,
-                     'tasdiqlandi', :picked_up_at, :due_date, :due_date, :loan_days, 1)";
+                     'tasdiqlandi', :picked_up_at, :due_date, :expires_at, :loan_days, 1, :served_by)";
     } else {
         $sql = "INSERT INTO reservations
                     (user_id, book_id, reserved_date, pickup_days, pickup_deadline,
-                     status, picked_up_at, due_date, loan_days, is_offline)
+                     status, picked_up_at, due_date, loan_days, is_offline, served_by)
                 VALUES
                     (:user_id, :book_id, :reserved_date, :pickup_days, :pickup_deadline,
-                     'tasdiqlandi', :picked_up_at, :due_date, :loan_days, 1)";
+                     'tasdiqlandi', :picked_up_at, :due_date, :loan_days, 1, :served_by)";
     }
 
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute([
+    $params = [
         ':user_id'         => $userId,
         ':book_id'         => $bookId,
         ':reserved_date'   => date('Y-m-d'),
@@ -230,7 +233,17 @@ try {
         ':picked_up_at'    => $now,           // NOW() – kitob qo'lga berildi
         ':due_date'        => $dueDate,       // NOW() + X kun – qaytarish muddati
         ':loan_days'       => $days,          // 1 / 2 / 3 / 5 / 10
-    ]);
+        ':served_by'       => $staffId > 0 ? $staffId : null,   // xizmat ko'rsatgan kutubxonachi
+    ];
+
+    // DIQQAT: ATTR_EMULATE_PREPARES = false bo'lgani uchun har bir nomli parametr
+    // so'rovda faqat BIR marta uchrashi kerak – shu sababli :expires_at alohida beriladi.
+    if ($hasExpiresAt) {
+        $params[':expires_at'] = $dueDate;
+    }
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
     $reservationId = (int) $pdo->lastInsertId();
 
     // --- 2.7. REAL-TIME: bo'sh nusxani kamaytirish ---

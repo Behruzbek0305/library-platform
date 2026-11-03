@@ -6,7 +6,7 @@
  *  kutubxonachi band qilishlar ro'yxatini ko'radi va tasdiqlaydi.
  *
  *  Amallar (hammasi POST + CSRF):
- *    approve – "kutilmoqda"  → "tasdiqlandi"  (picked_up_at yoziladi)
+ *    approve – "kutilmoqda"  → "tasdiqlandi"  (picked_up_at va served_by yoziladi)
  *    return  – "tasdiqlandi" → "qaytarildi"   (returned_at yoziladi, nusxa yana bo'sh)
  *    reject  – "kutilmoqda" → "rad_etildi"   (yozuv saqlanadi, talaba ham ko'radi)
  *
@@ -16,6 +16,13 @@
  *    - kutilayotganlar ichida muddati eng oz qolgani eng tepada
  *    - HEMIS ID bo'yicha qidiruv, fakultet va guruh bo'yicha filtr
  *    - tugmalar bitta funksiyada (renderActions), jadval va kartochka ikkalasi ishlatadi
+ *
+ *  Takomillashtirish 1-bosqich:
+ *    - "Tasdiqlash" bosilganda reservations.served_by ga joriy kutubxonachi
+ *      ID si ($_SESSION['user_id']) yoziladi
+ *    - ro'yxat so'rovi "LEFT JOIN users staff ON r.served_by = staff.id" orqali
+ *      xodim ismini ham oladi va "Mas'ul xodim" qatori ko'rsatiladi
+ *      (biriktirilmagan bo'lsa – "Kutilmoqda")
  *
  *  Eslatma: so'rovdagi "expires_at" bazada "pickup_deadline",
  *  "reserved_at" esa "created_at" ustuniga to'g'ri keladi.
@@ -177,6 +184,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Joriy vaqt PHP'dan olinadi (Asia/Tashkent, functions.php da o'rnatilgan).
         $now = date('Y-m-d H:i:s');
 
+        // Xizmat ko'rsatayotgan xodim: hozir tizimda turgan kutubxonachi.
+        // (requireAdmin() sahifa boshida tekshirgani uchun bu yerda albatta admin.)
+        $staffId = (int) ($_SESSION['user_id'] ?? 0);
+
         // 6-bosqich: available_copies ni to'g'ri boshqarish uchun
         // band qilishning kitob ID sini oldindan olamiz.
         $stmtBook = $pdo->prepare('SELECT book_id FROM reservations WHERE id = :id');
@@ -184,14 +195,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $resBookId = (int) ($stmtBook->fetchColumn() ?: 0);
 
         if ($action === 'approve') {
-            // Tasdiqlash: kitob talabaga berildi – olib ketilgan vaqt yoziladi
+            // Tasdiqlash: kitob talabaga berildi – olib ketilgan vaqt va
+            // xizmat ko'rsatgan xodim (served_by) yoziladi
             $stmt = $pdo->prepare(
                 "UPDATE reservations
-                 SET status = 'tasdiqlandi', picked_up_at = :now
+                 SET status = 'tasdiqlandi', picked_up_at = :now, served_by = :staff_id
                  WHERE id = :id AND status = 'kutilmoqda'"
             );
-            $stmt->execute([':now' => $now, ':id' => $id]);
-            $message = 'Band qilish tasdiqlandi. Kitob berilgan vaqt saqlandi.';
+            $stmt->execute([
+                ':now'      => $now,
+                ':staff_id' => $staffId > 0 ? $staffId : null,
+                ':id'       => $id,
+            ]);
+            $message = 'Band qilish tasdiqlandi. Kitob berilgan vaqt va mas\'ul xodim saqlandi.';
 
         } elseif ($action === 'return') {
             // Qaytarildi: qaytarilgan vaqt yoziladi (nusxa BOOK_SELECT orqali o'zi bo'shaydi)
@@ -268,15 +284,19 @@ try {
          WHERE role = 'talaba' AND group_name IS NOT NULL AND group_name <> '' ORDER BY group_name"
     )->fetchAll(PDO::FETCH_COLUMN);
 
-    // Band qilishlar ro'yxati (hamma shart prepared statement orqali)
+    // Band qilishlar ro'yxati (hamma shart prepared statement orqali).
+    // "staff" – so'rovga xizmat ko'rsatgan kutubxonachi (served_by). LEFT JOIN
+    // ishlatilgani uchun xodim biriktirilmagan so'rovlar ham ro'yxatdan tushib qolmaydi.
     $sql = 'SELECT r.id, r.reserved_date, r.created_at, r.pickup_days, r.pickup_deadline, r.status,
-                   r.picked_up_at, r.returned_at, r.is_offline,
+                   r.picked_up_at, r.returned_at, r.is_offline, r.served_by,
                    u.name AS user_name, u.email AS user_email,
                    u.faculty, u.direction, u.group_name, u.hemis_id,
-                   b.id AS book_id, b.title AS book_title
+                   b.id AS book_id, b.title AS book_title,
+                   staff.name AS staff_name
             FROM reservations r
             JOIN users u ON u.id = r.user_id
             JOIN books b ON b.id = r.book_id
+            LEFT JOIN users staff ON r.served_by = staff.id
             WHERE 1 = 1';
     $params = [];
 
@@ -424,7 +444,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <th class="px-3 py-3 font-semibold">Fakultet va guruh</th>
                     <th class="px-3 py-3 font-semibold">Kitob</th>
                     <th class="px-3 py-3 font-semibold">Band qilingan / Qolgan muddat</th>
-                    <th class="px-3 py-3 font-semibold">Berilgan / Qaytarilgan</th>
+                    <th class="px-3 py-3 font-semibold">Berilgan / Qaytarilgan / Xodim</th>
                     <th class="px-3 py-3 font-semibold">Holati</th>
                     <th class="px-3 py-3 font-semibold text-right">Harakatlar</th>
                 </tr>
@@ -468,7 +488,7 @@ require_once __DIR__ . '/../includes/header.php';
                             <?php renderTimer($r); ?>
                         </td>
 
-                        <!-- Olib ketilgan va qaytarilgan sana -->
+                        <!-- Olib ketilgan va qaytarilgan sana + mas'ul xodim -->
                         <td class="px-3 py-3 text-xs">
                             <?php if (!empty($r['picked_up_at'])): ?>
                                 <div class="text-green-700">Berilgan: <b><?= e(formatDateTime((string) $r['picked_up_at'])) ?></b></div>
@@ -482,6 +502,9 @@ require_once __DIR__ . '/../includes/header.php';
                             <?php if (empty($r['picked_up_at']) && empty($r['returned_at']) && (int) $r['is_offline'] !== 1): ?>
                                 <span class="text-slate-400">—</span>
                             <?php endif; ?>
+
+                            <!-- Mas'ul xodim (served_by): yo'q bo'lsa "Kutilmoqda" -->
+                            <?php renderStaffLine($r['staff_name'] ?? null); ?>
                         </td>
 
                         <!-- Holati -->
@@ -558,6 +581,11 @@ require_once __DIR__ . '/../includes/header.php';
                             <span class="inline-block px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-medium">Offlayn berilgan</span>
                         </div>
                     <?php endif; ?>
+
+                    <!-- Mas'ul xodim (served_by): yo'q bo'lsa "Kutilmoqda" -->
+                    <div class="col-span-2">
+                        <?php renderStaffLine($r['staff_name'] ?? null); ?>
+                    </div>
                 </dl>
 
                 <?php if ($r['status'] === 'kutilmoqda' || $r['status'] === 'tasdiqlandi'): ?>

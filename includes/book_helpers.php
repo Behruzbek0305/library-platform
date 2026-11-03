@@ -334,6 +334,23 @@ function statusBadge(string $status, ?string $deadline = null, ?string $dueDate 
 }
 
 // ------------------------------------------------------------
+// 4.1. MAS'UL XODIM QATORI (kabinet va admin panelda ishlatiladi)
+//      served_by orqali biriktirilgan kutubxonachi ismini chiqaradi.
+//      Biriktirilmagan bo'lsa (hali tasdiqlanmagan) – "Kutilmoqda".
+//      $staffName – so'rovdagi "LEFT JOIN users staff" dan kelgan staff.name
+// ------------------------------------------------------------
+function renderStaffLine(?string $staffName): void
+{
+    $name = trim((string) $staffName);
+
+    if ($name !== '') {
+        echo '<div class="text-slate-700 mt-0.5">Mas\'ul xodim: <b>' . e($name) . '</b></div>';
+    } else {
+        echo '<div class="text-slate-500 mt-0.5">Mas\'ul xodim: <span class="text-amber-600 font-medium">Kutilmoqda</span></div>';
+    }
+}
+
+// ------------------------------------------------------------
 // 5. OLIB KETISH MUDDATI (1, 2 yoki 3 kun) VA AVTOMATIK RAD ETISH
 //    OFFLINE_DAY_OPTIONS – kutubxonachi uchun "Offlayn registratsiya"
 //    formasidagi muddatlar (1, 2, 3, 5, 10 kun). Bu – kitobning berilish
