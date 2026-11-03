@@ -68,8 +68,8 @@ function readFilters(array $src, string $statusKey): array
 
     return [
         'status'  => $status,
-        // HEMIS ID faqat raqam: boshqa belgilar olib tashlanadi (eng ko'pi 20 ta)
-        'q'       => mb_substr((string) preg_replace('/\D+/', '', (string) ($src['q'] ?? '')), 0, 20),
+        // HEMIS ID faqat raqam: boshqa belgilar olib tashlanadi, maksimal uzunlik HEMIS_ID_LENGTH bilan cheklanadi)
+        'q'       => mb_substr((string) preg_replace('/\D+/', '', (string) ($src['q'] ?? '')), 0, HEMIS_ID_LENGTH),
         'faculty' => mb_substr(trim((string) ($src['faculty'] ?? '')), 0, 150),
         'group'   => mb_substr(trim((string) ($src['group'] ?? '')), 0, 30),
     ];
@@ -401,7 +401,7 @@ require_once __DIR__ . '/../includes/header.php';
     <!-- Holat tanlangan bo'lsa, qidirganda ham saqlanib qoladi -->
     <input type="hidden" name="status" value="<?= e($filters['status']) ?>">
 
-    <input type="text" name="q" value="<?= e($filters['q']) ?>" maxlength="20" inputmode="numeric"
+    <input type="text" name="q" value="<?= e($filters['q']) ?>" maxlength="<?= (int) HEMIS_ID_LENGTH ?>" inputmode="numeric"
            placeholder="HEMIS ID bo'yicha qidirish..." aria-label="HEMIS ID bo'yicha qidirish"
            class="<?= $inputClass ?>">
 
@@ -476,9 +476,9 @@ require_once __DIR__ . '/../includes/header.php';
                             <div class="text-xs text-slate-500 break-all"><?= e($r['user_email']) ?></div>
                         </td>
 
-                        <!-- HEMIS ID -->
-                        <td class="px-3 py-3 whitespace-nowrap font-mono text-xs">
-                            <?= !empty($r['hemis_id']) ? e($r['hemis_id']) : '<span class="text-slate-400">—</span>' ?>
+                        <!-- HEMIS ID: bosilganda nusxalanadi -->
+                        <td class="px-3 py-3 whitespace-nowrap text-xs">
+                            <?php renderHemisCopy($r['hemis_id'] ?? null); ?>
                         </td>
 
                         <!-- Fakultet va guruh -->
@@ -555,7 +555,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <dl class="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                     <div>
                         <dt class="text-slate-500">HEMIS ID</dt>
-                        <dd class="font-mono font-semibold"><?= !empty($r['hemis_id']) ? e($r['hemis_id']) : '—' ?></dd>
+                        <dd class="font-semibold"><?php renderHemisCopy($r['hemis_id'] ?? null); ?></dd>
                     </div>
                     <div>
                         <dt class="text-slate-500">Guruh</dt>

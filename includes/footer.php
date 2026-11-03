@@ -126,9 +126,11 @@ $hasBookModalJs = is_readable(__DIR__ . '/../assets/js/book-modal.js');
                                     Talabaning HEMIS ID si
                                 </label>
                                 <input type="text" id="off_hemis_modal" name="hemis_id" required
-                                       maxlength="20" inputmode="numeric" autocomplete="off"
-                                       placeholder="Masalan: 123456789012" class="<?= e(offlineFieldClass()) ?>">
-                                <p class="text-xs text-slate-500">Faqat raqam (6 tadan 20 tagacha).</p>
+                                       maxlength="<?= (int) HEMIS_ID_LENGTH ?>" minlength="<?= (int) HEMIS_ID_LENGTH ?>"
+                                       pattern="\d{<?= (int) HEMIS_ID_LENGTH ?>}" inputmode="numeric" autocomplete="off"
+                                       data-digits-only
+                                       placeholder="Masalan: 341231102185" class="<?= e(offlineFieldClass()) ?>">
+                                <p class="text-xs text-slate-500">Faqat raqam, aniq <?= (int) HEMIS_ID_LENGTH ?> ta.</p>
                             </div>
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -242,5 +244,7 @@ $hasBookModalJs = is_readable(__DIR__ . '/../assets/js/book-modal.js');
     <script src="<?= e(url('assets/js/menu.js')) ?>" defer></script>
     <script src="<?= e(url('assets/js/live-search.js')) ?>" defer></script>
     <script src="<?= e(url('assets/js/book-modal.js')) ?>" defer></script>
+    <!-- HEMIS ID ni bir bosishda nusxalash va maydonda faqat raqamga ruxsat berish -->
+    <script src="<?= e(url('assets/js/hemis.js')) ?>" defer></script>
 </body>
 </html>

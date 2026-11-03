@@ -42,6 +42,21 @@ function redirect(string $path): never
 }
 
 // ------------------------------------------------------------
+// 1.1. HEMIS ID QOIDASI
+//      HEMIS ID aniq HEMIS_ID_LENGTH ta raqamdan iborat bo'lishi shart
+//      (masalan: 341231102185 – 12 ta raqam). Kam ham, ko'p ham mumkin emas.
+//      Uzunlik o'zgarsa, faqat shu bitta qiymatni o'zgartiring – barcha
+//      forma, tekshiruv va filtrlar shundan foydalanadi.
+// ------------------------------------------------------------
+const HEMIS_ID_LENGTH = 12;
+
+/** HEMIS ID to'g'ri formatdami? (faqat raqam, aniq HEMIS_ID_LENGTH ta) */
+function isValidHemisId(string $hemisId): bool
+{
+    return (bool) preg_match('/^\d{' . HEMIS_ID_LENGTH . '}$/', $hemisId);
+}
+
+// ------------------------------------------------------------
 // 2. XSS HIMOYASI
 //    Foydalanuvchi kiritgan har qanday matnni sahifaga chiqarishdan
 //    oldin shu funksiyadan o'tkazing. Misol: echo e($matn);

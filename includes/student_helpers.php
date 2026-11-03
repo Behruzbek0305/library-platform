@@ -82,10 +82,10 @@ function validateStudentData(array $input): array
         $errors[] = "Guruh nomi 2 tadan 30 tagacha belgi bo'lsin (harf, raqam, defis).";
     }
 
-    // 2.5. HEMIS ID: faqat raqam. Aniq uzunlik HEMIS bilan integratsiyada aniqlanadi,
-    //      hozircha 6 dan 20 gacha raqam qabul qilinadi.
-    if (!preg_match('/^\d{6,20}$/', $data['hemis_id'])) {
-        $errors[] = "HEMIS ID faqat raqamlardan iborat bo'lsin (6 tadan 20 tagacha raqam).";
+    // 2.5. HEMIS ID: faqat raqam va ANIQ HEMIS_ID_LENGTH (12) ta bo'lishi shart.
+    //      Masalan: 341231102185. Kam ham, ko'p ham bo'lsa – xatolik.
+    if (!isValidHemisId($data['hemis_id'])) {
+        $errors[] = "HEMIS ID aniq " . HEMIS_ID_LENGTH . " ta raqamdan iborat bo'lishi kerak (masalan: 341231102185).";
     }
 
     return ['data' => $data, 'errors' => $errors];
@@ -118,6 +118,12 @@ function isStudentProfileComplete(?array $user): bool
         if (trim((string) ($user[$field] ?? '')) === '') {
             return false;
         }
+    }
+
+    // Eski akkauntlarda HEMIS ID noto'g'ri uzunlikda bo'lishi mumkin:
+    // bunday talaba avval profilini tuzatishi kerak (profile.php)
+    if (!isValidHemisId((string) $user['hemis_id'])) {
+        return false;
     }
 
     // Eski akkauntlarda ism bitta so'z bo'lishi mumkin: to'liq ism talab qilinadi
@@ -171,8 +177,13 @@ function renderStudentFields(array $form): void
            placeholder="Masalan: DI-21-01" class="<?= $input ?>">
 
     <label for="hemis_id" class="block text-sm font-bold mt-3 mb-1">HEMIS ID</label>
-    <input type="text" id="hemis_id" name="hemis_id" value="<?= e($form['hemis_id'] ?? '') ?>" required maxlength="20"
-           inputmode="numeric" placeholder="Talaba ID raqami (faqat raqam)" class="<?= $input ?>">
-    <p class="text-xs text-slate-500 mt-1">HEMIS ID talabalik guvohnomangizda yoki HEMIS kabinetingizda yozilgan.</p>
+    <!-- data-digits-only: hemis.js faqat raqamlarga ruxsat beradi; maxlength – aniq 12 ta -->
+    <input type="text" id="hemis_id" name="hemis_id" value="<?= e($form['hemis_id'] ?? '') ?>" required
+           maxlength="<?= (int) HEMIS_ID_LENGTH ?>" minlength="<?= (int) HEMIS_ID_LENGTH ?>"
+           pattern="\d{<?= (int) HEMIS_ID_LENGTH ?>}" inputmode="numeric" autocomplete="off" data-digits-only
+           placeholder="Masalan: 341231102185" class="<?= $input ?>">
+    <p class="text-xs text-slate-500 mt-1">
+        HEMIS ID aniq <?= (int) HEMIS_ID_LENGTH ?> ta raqamdan iborat. U talabalik guvohnomangizda yoki HEMIS kabinetingizda yozilgan.
+    </p>
     <?php
 }

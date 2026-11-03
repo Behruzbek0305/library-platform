@@ -74,8 +74,8 @@ $errors = [];
 if ($bookId === false || $bookId < 1) {
     $errors[] = "Kitob noto'g'ri tanlangan.";
 }
-if ($hemisId === '' || mb_strlen($hemisId) < 4) {
-    $errors[] = 'Talaba HEMIS ID sini kiriting (kamida 4 ta raqam).';
+if (!isValidHemisId($hemisId)) {
+    $errors[] = 'Talaba HEMIS ID si aniq ' . HEMIS_ID_LENGTH . ' ta raqamdan iborat bo\'lishi kerak (masalan: 341231102185).';
 }
 if ($fullName === '' || mb_strlen($fullName) < 3) {
     $errors[] = 'Talaba FIO sini kiriting.';
@@ -283,7 +283,7 @@ try {
     }
 
     // Email yoki HEMIS ID band bo'lib qolganmi? (UNIQUE key)
-    if ($ex->getCode() === '23000' || str_contains($ex->getMessage(), 'Duplicate')) {
+    if ((string) $ex->getCode() === '23000' || str_contains($ex->getMessage(), 'Duplicate')) {
         setFlash('error',
             'Bu Email yoki HEMIS ID tizimda allaqachon mavjud, lekin ma\'lumotlar mos kelmadi. '
             . 'Tekshirib, qayta urinib ko\'ring yoki talabani mavjud akkaunti orqali tanlang.');

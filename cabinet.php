@@ -220,7 +220,11 @@ require_once __DIR__ . '/includes/header.php';
             <div class="min-w-0">
                 <dt class="text-slate-500"><?= e($label) ?></dt>
                 <dd class="font-semibold break-words">
-                    <?php if ($value !== ''): ?>
+                    <?php if ($value !== '' && $label === 'HEMIS ID'): ?>
+                        <!-- HEMIS ID: bosilganda nusxalanadi (assets/js/hemis.js) -->
+                        <?php renderHemisCopy($value); ?>
+                        <span class="text-xs font-normal text-slate-400 ml-1">(nusxalash uchun bosing)</span>
+                    <?php elseif ($value !== ''): ?>
                         <?= e($value) ?>
                     <?php else: ?>
                         <span class="text-amber-600 font-normal">kiritilmagan</span>

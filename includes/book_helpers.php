@@ -623,9 +623,11 @@ function renderOfflineIssueForm(int $bookId, string $variant = 'modal', string $
                 Talabaning HEMIS ID si
             </label>
             <input type="text" id="off_hemis_<?= e($variant) ?>" name="hemis_id" required
-                   maxlength="20" inputmode="numeric" autocomplete="off"
-                   placeholder="Masalan: 123456789012" class="<?= $fieldClass ?>">
-            <p class="text-xs text-slate-500">Faqat raqam (6 tadan 20 tagacha).</p>
+                   maxlength="<?= (int) HEMIS_ID_LENGTH ?>" minlength="<?= (int) HEMIS_ID_LENGTH ?>"
+                   pattern="\d{<?= (int) HEMIS_ID_LENGTH ?>}" inputmode="numeric" autocomplete="off"
+                   data-digits-only
+                   placeholder="Masalan: 341231102185" class="<?= $fieldClass ?>">
+            <p class="text-xs text-slate-500">Faqat raqam, aniq <?= (int) HEMIS_ID_LENGTH ?> ta.</p>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -680,6 +682,35 @@ function renderOfflineIssueForm(int $bookId, string $variant = 'modal', string $
             </button>
         <?php endif; ?>
     </form>
+    <?php
+}
+
+/**
+ * ============================================================
+ *  HEMIS ID – BOSILGANDA NUSXALANADIGAN KO'RINISH
+ *  Admin panelda ham, "Mening kabinetim"da ham shu funksiya ishlatiladi.
+ *  Tugma bosilganda assets/js/hemis.js qiymatni vaqtinchalik xotiraga
+ *  (clipboard) nusxalaydi va "Nusxalandi" xabarini ko'rsatadi.
+ *  JavaScript o'chiq bo'lsa ham raqam ko'rinib turadi (matn sifatida).
+ *  HEMIS ID bo'sh bo'lsa – "—" chiqadi.
+ * ============================================================
+ */
+function renderHemisCopy(?string $hemisId): void
+{
+    $hemisId = trim((string) $hemisId);
+
+    if ($hemisId === '') {
+        echo '<span class="text-slate-400">—</span>';
+        return;
+    }
+    ?>
+    <button type="button" data-copy="<?= e($hemisId) ?>"
+            title="Nusxalash uchun bosing"
+            aria-label="HEMIS ID ni nusxalash: <?= e($hemisId) ?>"
+            class="font-mono font-semibold rounded px-1 -mx-1 cursor-copy transition
+                   hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300">
+        <?= e($hemisId) ?>
+    </button>
     <?php
 }
 
