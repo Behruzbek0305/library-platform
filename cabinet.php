@@ -9,9 +9,12 @@
  *  4-bosqich: kitob qachon berilgani (picked_up_at) va qachon
  *  qaytarilgani (returned_at) ham ko'rsatiladi.
  *
- *  Takomillashtirish 1-bosqich: so'rovga xizmat ko'rsatgan kutubxonachi
- *  (served_by), «Qaytarildi» deb belgilagan (returned_by) va rad etgan (rejected_by)
- *  xodimlar ham alohida ko'rsatiladi.
+ *  REAL VAQT TAYMERI (yangi):
+ *    - "kutilmoqda"            → olib ketish muddatigacha (pickup_deadline)
+ *    - "tasdiqlandi/berilgan"  → topshirish (qaytarish) muddatigacha (due_date)
+ *    Muddat HTML'da data-expires="2026-11-05T18:00:00+05:00" ko'rinishida
+ *    turadi, sahifa oxiridagi JavaScript uni har soniyada yangilaydi:
+ *    "01 kun 02:15:40". Muddat o'tsa – qizil "Muddati tugadi" belgisi chiqadi.
  * ============================================================
  */
 
@@ -36,6 +39,63 @@ function formatDateTime(?string $value): string
     return date('d.m.Y H:i', strtotime($value));
 }
 
+/**
+ * Band qilish holatiga qarab, qaysi muddat sanalishini aniqlaydi.
+ *   kutilmoqda           → olib ketish muddati (pickup_deadline)
+ *   tasdiqlandi/berilgan → qaytarish muddati (due_date)
+ * Taymer kerak bo'lmasa (qaytarilgan, rad etilgan yoki muddat yo'q) null qaytaradi.
+ *
+ * @return array{label: string, value: string}|null
+ */
+function reservationDeadline(array $r): ?array
+{
+    $status = (string) ($r['status'] ?? '');
+
+    if ($status === 'kutilmoqda' && !empty($r['pickup_deadline'])) {
+        return ['label' => 'Olib ketishga qoldi:', 'value' => (string) $r['pickup_deadline']];
+    }
+
+    if (($status === 'tasdiqlandi' || $status === 'berilgan') && !empty($r['due_date'])) {
+        return ['label' => 'Topshirishga qoldi:', 'value' => (string) $r['due_date']];
+    }
+
+    return null;
+}
+
+/**
+ * Real vaqt taymer blokini chizadi (jadval ham, telefon kartochkasi ham shuni ishlatadi).
+ *
+ * Boshlang'ich matnni server hisoblaydi (JavaScript o'chiq bo'lsa ham ko'rinadi),
+ * keyin sahifa oxiridagi skript data-expires bo'yicha har soniyada yangilaydi.
+ * data-expires – ISO 8601 (date('c')), vaqt zonasi bilan: 2026-11-05T18:00:00+05:00.
+ */
+function renderDeadlineTimer(array $r): void
+{
+    $deadline = reservationDeadline($r);
+    if ($deadline === null) {
+        return;
+    }
+
+    $rem = formatRemainingTime($deadline['value'], 'Muddati tugadi');
+
+    if ($rem['expired']) {
+        $cls = 'bg-red-100 text-red-700';
+    } elseif ($rem['urgent']) {
+        $cls = 'bg-orange-100 text-orange-700';
+    } else {
+        $cls = 'bg-amber-100 text-amber-800';
+    }
+    ?>
+    <div class="mt-1 text-xs">
+        <span class="text-slate-600"><?= e($deadline['label']) ?></span>
+        <span data-expires="<?= e(date('c', strtotime($deadline['value']))) ?>"
+              class="inline-block px-1.5 py-0.5 rounded font-medium <?= e($cls) ?>">
+            <?= e($rem['text']) ?>
+        </span>
+    </div>
+    <?php
+}
+
 // ------------------------------------------------------------
 // 1. BEKOR QILISH (POST)
 // ------------------------------------------------------------
@@ -48,7 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $reservationId = filter_var($_POST['cancel_id'] ?? null, FILTER_VALIDATE_INT);
 
-        if ($reservationId !== false && $reservationId > 0) {
+    if ($reservationId !== false && $reservationId > 0) {
         try {
             $pdo->beginTransaction();
 
@@ -96,21 +156,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // ------------------------------------------------------------
 // 2. FOYDALANUVCHINING BAND QILISHLARINI OLISH
 //    (4-bosqich: picked_up_at va returned_at ham olinadi)
+//    (Taymer: qaytarish muddati uchun due_date ham olinadi)
 // ------------------------------------------------------------
 $reservations = [];
 try {
     $stmt = $pdo->prepare(
         'SELECT r.id, r.reserved_date, r.pickup_days, r.pickup_deadline, r.status,
-                r.picked_up_at, r.returned_at, r.is_offline,
-                b.id AS book_id, b.title, b.author,
-                staff.name    AS staff_name,
-                returner.name AS returner_name,
-                rejecter.name AS rejecter_name
+                r.picked_up_at, r.returned_at, r.due_date,
+                b.id AS book_id, b.title, b.author
          FROM reservations r
          JOIN books b ON b.id = r.book_id
-         LEFT JOIN users staff    ON r.served_by   = staff.id
-         LEFT JOIN users returner ON r.returned_by = returner.id
-         LEFT JOIN users rejecter ON r.rejected_by = rejecter.id
          WHERE r.user_id = :user_id
          ORDER BY r.created_at DESC, r.id DESC'
     );
@@ -198,10 +253,7 @@ require_once __DIR__ . '/includes/header.php';
             </thead>
             <tbody>
                 <?php foreach ($reservations as $r): ?>
-                    <?php
-                    $rem = formatRemainingTime((string) ($r['pickup_deadline'] ?? ''));
-                    $pickupDays = (int) ($r['pickup_days'] ?? 1);
-                    ?>
+                    <?php $pickupDays = (int) ($r['pickup_days'] ?? 1); ?>
                     <tr class="border-t border-slate-200">
                         <td class="px-4 py-3">
                             <a href="<?= e(url('book.php?id=' . (int) $r['book_id'])) ?>"
@@ -214,26 +266,22 @@ require_once __DIR__ . '/includes/header.php';
                                 <div class="text-slate-600 mt-0.5">
                                     Olib ketish: <b><?= $pickupDays ?> kun</b> (<?= e(date('d.m.Y H:i', strtotime((string) $r['pickup_deadline']))) ?> gacha)
                                 </div>
-                                <?php if ($r['status'] === 'kutilmoqda'): ?>
-                                    <div class="mt-1">
-                                        <?php if ($rem['urgent']): ?>
-                                            <span class="inline-block px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-medium">⚠️ <?= e($rem['text']) ?></span>
-                                        <?php else: ?>
-                                            <span class="inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">⏳ <?= e($rem['text']) ?></span>
-                                        <?php endif; ?>
-                                    </div>
-                                <?php endif; ?>
                             <?php endif; ?>
+
                             <?php if (!empty($r['picked_up_at'])): ?>
                                 <div class="text-green-700 mt-0.5">Olgan vaqtingiz: <b><?= e(formatDateTime((string) $r['picked_up_at'])) ?></b></div>
+                            <?php endif; ?>
+                            <?php if (!empty($r['due_date']) && in_array($r['status'], ['tasdiqlandi', 'berilgan'], true)): ?>
+                                <div class="text-slate-600 mt-0.5">Topshirish muddati: <b><?= e(formatDateTime((string) $r['due_date'])) ?></b></div>
                             <?php endif; ?>
                             <?php if (!empty($r['returned_at'])): ?>
                                 <div class="text-slate-700 mt-0.5">Qaytargan vaqtingiz: <b><?= e(formatDateTime((string) $r['returned_at'])) ?></b></div>
                             <?php endif; ?>
-                            <!-- Xodimlar izi: tasdiqlagan / qaytarilgan deb belgilagan / rad etgan -->
-                            <?php renderStaffTrail($r); ?>
+
+                            <!-- REAL VAQT TAYMERI -->
+                            <?php renderDeadlineTimer($r); ?>
                         </td>
-                        <td class="px-4 py-3"><?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? '')) ?></td>
+                        <td class="px-4 py-3"><?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? ''), (string) ($r['due_date'] ?? '')) ?></td>
                         <td class="px-4 py-3 text-right">
                             <?php if ($r['status'] === 'kutilmoqda'): ?>
                                 <form method="post" action="<?= e(url('cabinet.php')) ?>"
@@ -256,10 +304,7 @@ require_once __DIR__ . '/includes/header.php';
     <!-- Telefon (768px dan tor): har bir band qilish alohida kartochka -->
     <div class="md:hidden space-y-3">
         <?php foreach ($reservations as $r): ?>
-            <?php
-            $rem = formatRemainingTime((string) ($r['pickup_deadline'] ?? ''));
-            $pickupDays = (int) ($r['pickup_days'] ?? 1);
-            ?>
+            <?php $pickupDays = (int) ($r['pickup_days'] ?? 1); ?>
             <div class="bg-white border border-slate-200 rounded-xl p-4">
                 <div class="flex items-start justify-between gap-2">
                     <div class="min-w-0">
@@ -267,31 +312,27 @@ require_once __DIR__ . '/includes/header.php';
                            class="font-semibold text-blue-600 hover:underline break-words"><?= e($r['title']) ?></a>
                         <div class="text-sm text-slate-500 break-words"><?= e($r['author']) ?></div>
                     </div>
-                    <div class="shrink-0"><?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? '')) ?></div>
+                    <div class="shrink-0"><?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? ''), (string) ($r['due_date'] ?? '')) ?></div>
                 </div>
 
                 <div class="mt-2 text-xs text-slate-600 space-y-1">
                     <div>Band qilingan: <b><?= e(date('d.m.Y', strtotime((string) $r['reserved_date']))) ?></b></div>
                     <?php if (!empty($r['pickup_deadline'])): ?>
                         <div>Olib ketish: <b><?= $pickupDays ?> kun</b> (<?= e(date('d.m.Y H:i', strtotime((string) $r['pickup_deadline']))) ?> gacha)</div>
-                        <?php if ($r['status'] === 'kutilmoqda'): ?>
-                            <div class="pt-0.5">
-                                <?php if ($rem['urgent']): ?>
-                                    <span class="inline-block px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-medium">⚠️ <?= e($rem['text']) ?></span>
-                                <?php else: ?>
-                                    <span class="inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">⏳ <?= e($rem['text']) ?></span>
-                                <?php endif; ?>
-                            </div>
-                        <?php endif; ?>
                     <?php endif; ?>
+
                     <?php if (!empty($r['picked_up_at'])): ?>
                         <div class="text-green-700">Olgan vaqtingiz: <b><?= e(formatDateTime((string) $r['picked_up_at'])) ?></b></div>
+                    <?php endif; ?>
+                    <?php if (!empty($r['due_date']) && in_array($r['status'], ['tasdiqlandi', 'berilgan'], true)): ?>
+                        <div>Topshirish muddati: <b><?= e(formatDateTime((string) $r['due_date'])) ?></b></div>
                     <?php endif; ?>
                     <?php if (!empty($r['returned_at'])): ?>
                         <div class="text-slate-700">Qaytargan vaqtingiz: <b><?= e(formatDateTime((string) $r['returned_at'])) ?></b></div>
                     <?php endif; ?>
-                    <!-- Xodimlar izi: tasdiqlagan / qaytarilgan deb belgilagan / rad etgan -->
-                    <?php renderStaffTrail($r); ?>
+
+                    <!-- REAL VAQT TAYMERI -->
+                    <?php renderDeadlineTimer($r); ?>
                 </div>
 
                 <?php if ($r['status'] === 'kutilmoqda'): ?>
@@ -309,5 +350,74 @@ require_once __DIR__ . '/includes/header.php';
         <?php endforeach; ?>
     </div>
 <?php endif; ?>
+
+<!-- ====== JONLI TAYMER (Vanilla JS) ======
+     Har soniyada [data-expires] elementlarini yangilaydi: "01 kun 02:15:40 qoldi".
+     Muddat o'tsa – qizil "Muddati tugadi" belgisi.
+     Server vaqti bilan sinxronlanadi (foydalanuvchi kompyuter soati noto'g'ri bo'lsa ham to'g'ri ishlaydi).
+     Matn faqat textContent orqali qo'yiladi (XSS bo'lmaydi). -->
+<script>
+(function () {
+    'use strict';
+
+    var nodes = document.querySelectorAll('[data-expires]');
+    if (!nodes.length) { return; }
+
+    // Server va brauzer soati orasidagi farq (soniyada)
+    var offset = <?= (int) time() ?> - Math.floor(Date.now() / 1000);
+
+    // Tailwind sinflari: oddiy / shoshilinch (oxirgi 6 soat) / muddati tugagan
+    var BASE    = 'inline-block px-1.5 py-0.5 rounded font-medium ';
+    var NORMAL  = BASE + 'bg-amber-100 text-amber-800';
+    var URGENT  = BASE + 'bg-orange-100 text-orange-700';
+    var EXPIRED = BASE + 'bg-red-100 text-red-700 font-semibold';
+
+    // Har bir element uchun muddatni (soniyada) bir marta o'qib olamiz
+    var items = [];
+    Array.prototype.forEach.call(nodes, function (node) {
+        var ms = Date.parse(node.getAttribute('data-expires'));
+        if (!isNaN(ms)) {
+            items.push({ node: node, ts: Math.floor(ms / 1000) });
+        }
+    });
+
+    function two(n) { return n < 10 ? '0' + n : String(n); }
+
+    function tick() {
+        var now    = Math.floor(Date.now() / 1000) + offset;
+        var active = 0;   // hali tugamagan taymerlar soni
+
+        items.forEach(function (item) {
+            var left = item.ts - now;
+
+            // Muddat o'tgan: qizil badge, taymer to'xtaydi
+            if (left <= 0) {
+                item.node.className   = EXPIRED;
+                item.node.textContent = '⚠️ Muddati tugadi';
+                return;
+            }
+
+            active++;
+
+            var d = Math.floor(left / 86400);
+            var h = Math.floor((left % 86400) / 3600);
+            var m = Math.floor((left % 3600) / 60);
+            var s = left % 60;
+
+            // Format: 01 kun 02:15:40
+            item.node.textContent = two(d) + ' kun ' + two(h) + ':' + two(m) + ':' + two(s);
+            item.node.className   = left <= 6 * 3600 ? URGENT : NORMAL;
+        });
+
+        // Hammasi tugagan bo'lsa, intervalni to'xtatamiz
+        if (active === 0) {
+            clearInterval(timerId);
+        }
+    }
+
+    tick();
+    var timerId = setInterval(tick, 1000);
+})();
+</script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
