@@ -334,19 +334,49 @@ function statusBadge(string $status, ?string $deadline = null, ?string $dueDate 
 }
 
 // ------------------------------------------------------------
-// 4.1. MAS'UL XODIM QATORI (kabinet va admin panelda ishlatiladi)
-//      served_by orqali biriktirilgan kutubxonachi ismini chiqaradi.
-//      Biriktirilmagan bo'lsa (hali tasdiqlanmagan) – "Kutilmoqda".
-//      $staffName – so'rovdagi "LEFT JOIN users staff" dan kelgan staff.name
+// 4.1. XODIMLAR IZI (kabinet va admin panelda ishlatiladi)
+//      Har bir amalni qaysi kutubxonachi bajarganini ALOHIDA ko'rsatadi
+//      (turli xodimlar bo'lishi mumkin):
+//        - tasdiqlagan / offlayn bergan  (staff_name,    served_by)
+//        - «Qaytarildi» deb belgilagan   (returner_name, returned_by)
+//        - rad etgan                     (rejecter_name, rejected_by)
+//      $r – so'rov qatori: status, is_offline (bo'lsa) va yuqoridagi nomlar
+//      (LEFT JOIN users staff / returner / rejecter orqali keladi).
 // ------------------------------------------------------------
-function renderStaffLine(?string $staffName): void
+function renderStaffTrail(array $r): void
 {
-    $name = trim((string) $staffName);
+    $status   = (string) ($r['status'] ?? '');
+    $approver = trim((string) ($r['staff_name'] ?? ''));
+    $returner = trim((string) ($r['returner_name'] ?? ''));
+    $rejecter = trim((string) ($r['rejecter_name'] ?? ''));
+    $isOffline = (int) ($r['is_offline'] ?? 0) === 1;
 
-    if ($name !== '') {
-        echo '<div class="text-slate-700 mt-0.5">Mas\'ul xodim: <b>' . e($name) . '</b></div>';
-    } else {
-        echo '<div class="text-slate-500 mt-0.5">Mas\'ul xodim: <span class="text-amber-600 font-medium">Kutilmoqda</span></div>';
+    $line = static function (string $label, string $valueHtml): void {
+        echo '<div class="text-slate-700 mt-0.5">' . e($label) . ': ' . $valueHtml . '</div>';
+    };
+    $none = '<span class="text-slate-400">—</span>';
+
+    // 1) Tasdiqlagan (yoki offlayn bergan) xodim
+    if ($approver !== '') {
+        $line($isOffline ? 'Bergan xodim' : 'Tasdiqlagan xodim', '<b>' . e($approver) . '</b>');
+    } elseif ($status === 'kutilmoqda') {
+        // Hali hech kim biriktirilmagan
+        $line("Mas'ul xodim", '<span class="text-amber-600 font-medium">Kutilmoqda</span>');
+    } elseif (in_array($status, ['tasdiqlandi', 'berilgan', 'qaytarildi'], true)) {
+        // Eski yozuv: tasdiqlagan xodim saqlanmagan
+        $line('Tasdiqlagan xodim', $none);
+    }
+
+    // 2) «Qaytarildi» deb belgilagan xodim
+    if ($status === 'qaytarildi') {
+        $line('Qaytarilgan deb belgilagan', $returner !== '' ? '<b>' . e($returner) . '</b>' : $none);
+    }
+
+    // 3) Rad etgan xodim (NULL bo'lsa – muddati o'tib avtomatik rad etilgan)
+    if ($status === 'rad_etildi') {
+        $line('Rad etgan xodim', $rejecter !== ''
+            ? '<b>' . e($rejecter) . '</b>'
+            : '<span class="text-slate-500">Avtomatik (muddati o\'tgan)</span>');
     }
 }
 

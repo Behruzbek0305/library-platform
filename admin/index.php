@@ -18,8 +18,9 @@
  *    - tugmalar bitta funksiyada (renderActions), jadval va kartochka ikkalasi ishlatadi
  *
  *  Takomillashtirish 1-bosqich:
- *    - "Tasdiqlash" bosilganda reservations.served_by ga joriy kutubxonachi
- *      ID si ($_SESSION['user_id']) yoziladi
+ *    - "Tasdiqlash" bosilganda reservations.served_by, «Qaytarildi» bosilganda
+ *      returned_by, "Rad etish" bosilganda rejected_by ga joriy kutubxonachi
+ *      ID si ($_SESSION['user_id']) yoziladi (har biri alohida xodim bo'lishi mumkin)
  *    - ro'yxat so'rovi "LEFT JOIN users staff ON r.served_by = staff.id" orqali
  *      xodim ismini ham oladi va "Mas'ul xodim" qatori ko'rsatiladi
  *      (biriktirilmagan bo'lsa – "Kutilmoqda")
@@ -213,10 +214,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Qaytarildi: qaytarilgan vaqt yoziladi (nusxa BOOK_SELECT orqali o'zi bo'shaydi)
             $stmt = $pdo->prepare(
                 "UPDATE reservations
-                 SET status = 'qaytarildi', returned_at = :now
+                 SET status = 'qaytarildi', returned_at = :now, returned_by = :staff_id
                  WHERE id = :id AND status IN ('tasdiqlandi', 'berilgan')"
             );
-            $stmt->execute([':now' => $now, ':id' => $id]);
+            // «Qaytarildi» deb belgilagan xodim tasdiqlagan xodimdan boshqa bo'lishi mumkin
+            $stmt->execute([
+                ':now'      => $now,
+                ':staff_id' => $staffId > 0 ? $staffId : null,
+                ':id'       => $id,
+            ]);
             $message = "Kitob qaytarildi deb belgilandi. Nusxa yana bo'sh.";
 
             // REAL-TIME (6-bosqich): haqiqatan qaytgan nusxa bo'shlar soniga qo'shiladi
@@ -226,8 +232,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         } elseif ($action === 'reject') {
             // O'chirmaymiz, holatini "rad_etildi" qilamiz – talaba ham, kutubxonachi ham ko'radi
-            $stmt = $pdo->prepare("UPDATE reservations SET status = 'rad_etildi' WHERE id = :id AND status = 'kutilmoqda'");
-            $stmt->execute([':id' => $id]);
+            // Rad etgan xodim (rejected_by) ham saqlanadi
+            $stmt = $pdo->prepare(
+                "UPDATE reservations
+                 SET status = 'rad_etildi', rejected_by = :staff_id
+                 WHERE id = :id AND status = 'kutilmoqda'"
+            );
+            $stmt->execute([
+                ':staff_id' => $staffId > 0 ? $staffId : null,
+                ':id'       => $id,
+            ]);
             $message = 'Band qilish rad etildi.';
 
             // REAL-TIME (6-bosqich): rad etilgan band bo'sh nusxani qaytaradi
@@ -288,15 +302,19 @@ try {
     // "staff" – so'rovga xizmat ko'rsatgan kutubxonachi (served_by). LEFT JOIN
     // ishlatilgani uchun xodim biriktirilmagan so'rovlar ham ro'yxatdan tushib qolmaydi.
     $sql = 'SELECT r.id, r.reserved_date, r.created_at, r.pickup_days, r.pickup_deadline, r.status,
-                   r.picked_up_at, r.returned_at, r.is_offline, r.served_by,
+                   r.picked_up_at, r.returned_at, r.is_offline, r.served_by, r.returned_by, r.rejected_by,
                    u.name AS user_name, u.email AS user_email,
                    u.faculty, u.direction, u.group_name, u.hemis_id,
                    b.id AS book_id, b.title AS book_title,
-                   staff.name AS staff_name
+                   staff.name    AS staff_name,
+                   returner.name AS returner_name,
+                   rejecter.name AS rejecter_name
             FROM reservations r
             JOIN users u ON u.id = r.user_id
             JOIN books b ON b.id = r.book_id
-            LEFT JOIN users staff ON r.served_by = staff.id
+            LEFT JOIN users staff    ON r.served_by   = staff.id
+            LEFT JOIN users returner ON r.returned_by = returner.id
+            LEFT JOIN users rejecter ON r.rejected_by = rejecter.id
             WHERE 1 = 1';
     $params = [];
 
@@ -503,8 +521,8 @@ require_once __DIR__ . '/../includes/header.php';
                                 <span class="text-slate-400">—</span>
                             <?php endif; ?>
 
-                            <!-- Mas'ul xodim (served_by): yo'q bo'lsa "Kutilmoqda" -->
-                            <?php renderStaffLine($r['staff_name'] ?? null); ?>
+                            <!-- Xodimlar izi: tasdiqlagan / qaytarilgan deb belgilagan / rad etgan -->
+                            <?php renderStaffTrail($r); ?>
                         </td>
 
                         <!-- Holati -->
@@ -582,9 +600,9 @@ require_once __DIR__ . '/../includes/header.php';
                         </div>
                     <?php endif; ?>
 
-                    <!-- Mas'ul xodim (served_by): yo'q bo'lsa "Kutilmoqda" -->
+                    <!-- Xodimlar izi: tasdiqlagan / qaytarilgan deb belgilagan / rad etgan -->
                     <div class="col-span-2">
-                        <?php renderStaffLine($r['staff_name'] ?? null); ?>
+                        <?php renderStaffTrail($r); ?>
                     </div>
                 </dl>
 
