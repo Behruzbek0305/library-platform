@@ -10,20 +10,19 @@
  *    return  – "tasdiqlandi" → "qaytarildi"   (returned_at yoziladi, nusxa yana bo'sh)
  *    reject  – "kutilmoqda" → "rad_etildi"   (yozuv saqlanadi, talaba ham ko'radi)
  *
- *  Refaktoring (2-qadam):
- *    - jadval alohida ustunlarga bo'lindi: FIO, HEMIS ID, fakultet va guruh, kitob,
+ *  Imkoniyatlar:
+ *    - jadval alohida ustunlarga bo'lingan: FIO, HEMIS ID, fakultet va guruh, kitob,
  *      band qilingan vaqt + jonli taymer, berilgan/qaytarilgan sana, holat, harakatlar
  *    - kutilayotganlar ichida muddati eng oz qolgani eng tepada
  *    - HEMIS ID bo'yicha qidiruv, fakultet va guruh bo'yicha filtr
- *    - tugmalar bitta funksiyada (renderActions), jadval va kartochka ikkalasi ishlatadi
+ *    - "Tasdiqlash" bosilganda served_by, «Qaytarildi» da returned_by,
+ *      "Rad etish" da rejected_by ga joriy kutubxonachi ID si yoziladi
  *
- *  Takomillashtirish 1-bosqich:
- *    - "Tasdiqlash" bosilganda reservations.served_by, «Qaytarildi» bosilganda
- *      returned_by, "Rad etish" bosilganda rejected_by ga joriy kutubxonachi
- *      ID si ($_SESSION['user_id']) yoziladi (har biri alohida xodim bo'lishi mumkin)
- *    - ro'yxat so'rovi "LEFT JOIN users staff ON r.served_by = staff.id" orqali
- *      xodim ismini ham oladi va "Mas'ul xodim" qatori ko'rsatiladi
- *      (biriktirilmagan bo'lsa – "Kutilmoqda")
+ *  YANGI: TALABA KODI (pickup_code) BO'YICHA TEZKOR QIDIRUV
+ *    Talaba kutubxonada 6 belgili kodni (harf + raqam, masalan K7M 4P2) aytadi. Kutubxonachi uni yuqoridagi
+ *    "Talaba kodi" maydoniga yozadi – 6-belgi kiritilishi bilan buyurtma
+ *    o'zi topiladi va "Tasdiqlash" tugmasini bosadi.
+ *    (Oldin migrations/008_pickup_code.sql ishga tushirilgan bo'lishi kerak.)
  *
  *  Eslatma: so'rovdagi "expires_at" bazada "pickup_deadline",
  *  "reserved_at" esa "created_at" ustuniga to'g'ri keladi.
@@ -57,7 +56,7 @@ function formatDateTime(?string $value): string
 
 /**
  * Filtrlarni xavfsiz tarzda oladi (GET yoki POST massividan).
- * Qaytaradi: ['status' => ..., 'q' => ..., 'faculty' => ..., 'group' => ...]
+ * Qaytaradi: ['status' => ..., 'q' => ..., 'faculty' => ..., 'group' => ..., 'code' => ...]
  */
 function readFilters(array $src, string $statusKey): array
 {
@@ -68,10 +67,12 @@ function readFilters(array $src, string $statusKey): array
 
     return [
         'status'  => $status,
-        // HEMIS ID faqat raqam: boshqa belgilar olib tashlanadi, maksimal uzunlik HEMIS_ID_LENGTH bilan cheklanadi)
-        'q'       => mb_substr((string) preg_replace('/\D+/', '', (string) ($src['q'] ?? '')), 0, HEMIS_ID_LENGTH),
+        // HEMIS ID faqat raqam: boshqa belgilar olib tashlanadi (eng ko'pi 20 ta)
+        'q'       => mb_substr((string) preg_replace('/\D+/', '', (string) ($src['q'] ?? '')), 0, 20),
         'faculty' => mb_substr(trim((string) ($src['faculty'] ?? '')), 0, 150),
         'group'   => mb_substr(trim((string) ($src['group'] ?? '')), 0, 30),
+        // Talaba kodi: harf + raqam, eng ko'pi 6 belgi, harflar katta qilinadi ("k7m 4p2" ham qabul qilinadi)
+        'code'    => normalizeReservationCode((string) ($src['code'] ?? '')),
     ];
 }
 
@@ -125,6 +126,7 @@ function renderActions(array $r, array $filters, bool $compact): void
             <input type="hidden" name="q" value="<?= e($filters['q']) ?>">
             <input type="hidden" name="faculty" value="<?= e($filters['faculty']) ?>">
             <input type="hidden" name="group" value="<?= e($filters['group']) ?>">
+            <input type="hidden" name="code" value="<?= e($filters['code']) ?>">
             <button type="submit" class="<?= e($color . ' ' . $size) ?> text-white rounded-md">
                 <?= e($label) ?>
             </button>
@@ -189,7 +191,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // (requireAdmin() sahifa boshida tekshirgani uchun bu yerda albatta admin.)
         $staffId = (int) ($_SESSION['user_id'] ?? 0);
 
-        // 6-bosqich: available_copies ni to'g'ri boshqarish uchun
+        // available_copies ni to'g'ri boshqarish uchun
         // band qilishning kitob ID sini oldindan olamiz.
         $stmtBook = $pdo->prepare('SELECT book_id FROM reservations WHERE id = :id');
         $stmtBook->execute([':id' => $id]);
@@ -225,7 +227,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             $message = "Kitob qaytarildi deb belgilandi. Nusxa yana bo'sh.";
 
-            // REAL-TIME (6-bosqich): haqiqatan qaytgan nusxa bo'shlar soniga qo'shiladi
+            // REAL-TIME: haqiqatan qaytgan nusxa bo'shlar soniga qo'shiladi
             if ($stmt->rowCount() > 0 && $resBookId > 0) {
                 incrementAvailableCopies($pdo, $resBookId);
             }
@@ -244,7 +246,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             $message = 'Band qilish rad etildi.';
 
-            // REAL-TIME (6-bosqich): rad etilgan band bo'sh nusxani qaytaradi
+            // REAL-TIME: rad etilgan band bo'sh nusxani qaytaradi
             if ($stmt->rowCount() > 0 && $resBookId > 0) {
                 incrementAvailableCopies($pdo, $resBookId);
             }
@@ -303,6 +305,7 @@ try {
     // ishlatilgani uchun xodim biriktirilmagan so'rovlar ham ro'yxatdan tushib qolmaydi.
     $sql = 'SELECT r.id, r.reserved_date, r.created_at, r.pickup_days, r.pickup_deadline, r.status,
                    r.picked_up_at, r.returned_at, r.is_offline, r.served_by, r.returned_by, r.rejected_by,
+                   r.pickup_code,
                    u.name AS user_name, u.email AS user_email,
                    u.faculty, u.direction, u.group_name, u.hemis_id,
                    b.id AS book_id, b.title AS book_title,
@@ -335,6 +338,12 @@ try {
         $sql .= ' AND u.group_name = :group_name';
         $params[':group_name'] = $filters['group'];
     }
+    if ($filters['code'] !== '') {
+        // Talaba kodi bo'yicha qidiruv: 6 belgi yozilsa aniq moslik, kamroq bo'lsa – boshlanishi bo'yicha.
+        // Kod faqat harf va raqamdan iborat (normalizeReservationCode tozalagan), shuning uchun LIKE xavfsiz.
+        $sql .= ' AND r.pickup_code LIKE :pickup_code';
+        $params[':pickup_code'] = $filters['code'] . '%';
+    }
 
     // Tartib:
     //  1) kutilayotganlar tepada, ular ichida muddati eng oz qolgani birinchi (pickup_deadline ASC)
@@ -348,7 +357,7 @@ try {
     $reservations = $stmt->fetchAll();
 } catch (PDOException $ex) {
     error_log('[Kutubxona-ARM] Admin panelda xatolik: ' . $ex->getMessage());
-    setFlash('error', "Ma'lumotlarni yuklashda xatolik yuz berdi.");
+    setFlash('error', "Ma'lumotlarni yuklashda xatolik yuz berdi. (008-migratsiya ishga tushirilganmi?)");
 }
 
 // Holat tugmalari (boshqa filtrlar saqlanadi)
@@ -361,7 +370,7 @@ $tabs = [
 ];
 
 // Qidiruv yoki dropdown filtr yoqilganmi? ("Tozalash" tugmasi uchun)
-$hasSearch = $filters['q'] !== '' || $filters['faculty'] !== '' || $filters['group'] !== '';
+$hasSearch = $filters['q'] !== '' || $filters['faculty'] !== '' || $filters['group'] !== '' || $filters['code'] !== '';
 
 $inputClass = 'w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-300';
 
@@ -394,14 +403,41 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 </div>
 
+<!-- ====== TALABA KODI BO'YICHA TEZKOR QIDIRUV ======
+     Talaba kutubxonada 6 belgili kodni (harf + raqam) aytadi – kutubxonachi shu yerga yozadi.
+     6-belgi kiritilishi bilan forma o'zi yuboriladi (pastdagi JS). -->
+<form method="get" action="<?= e(url('admin/index.php')) ?>" id="codeSearchForm"
+      class="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3 flex flex-col sm:flex-row sm:items-center gap-2">
+    <label for="codeInput" class="text-sm font-semibold text-amber-900 shrink-0">🔑 Talaba kodi:</label>
+
+    <input type="text" id="codeInput" name="code" value="<?= e($filters['code']) ?>"
+           maxlength="7" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false"
+           placeholder="Masalan: K7M4P2"
+           aria-label="Talaba kodi bo'yicha qidirish"
+           class="border border-amber-300 rounded-md px-3 py-2 bg-white font-mono text-lg tracking-widest uppercase
+                  focus:outline-none focus:ring-2 focus:ring-amber-300 sm:w-48">
+
+    <button type="submit" class="bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-md px-5 py-2 text-sm">
+        Topish
+    </button>
+
+    <?php if ($filters['code'] !== ''): ?>
+        <a href="<?= e(url('admin/index.php')) ?>"
+           class="border border-slate-300 bg-white hover:bg-slate-50 rounded-md px-4 py-2 text-sm text-center">
+            Tozalash
+        </a>
+    <?php endif; ?>
+</form>
+
 <!-- ====== QIDIRUV VA FILTRLAR ====== -->
 <form method="get" action="<?= e(url('admin/index.php')) ?>"
       class="bg-white border border-slate-200 rounded-xl p-3 mb-3 grid grid-cols-1 md:grid-cols-[1.2fr_1fr_1fr_auto_auto] gap-2">
 
-    <!-- Holat tanlangan bo'lsa, qidirganda ham saqlanib qoladi -->
+    <!-- Holat va kod tanlangan bo'lsa, qidirganda ham saqlanib qoladi -->
     <input type="hidden" name="status" value="<?= e($filters['status']) ?>">
+    <input type="hidden" name="code" value="<?= e($filters['code']) ?>">
 
-    <input type="text" name="q" value="<?= e($filters['q']) ?>" maxlength="<?= (int) HEMIS_ID_LENGTH ?>" inputmode="numeric"
+    <input type="text" name="q" value="<?= e($filters['q']) ?>" maxlength="20" inputmode="numeric"
            placeholder="HEMIS ID bo'yicha qidirish..." aria-label="HEMIS ID bo'yicha qidirish"
            class="<?= $inputClass ?>">
 
@@ -424,7 +460,7 @@ require_once __DIR__ . '/../includes/header.php';
     </button>
 
     <?php if ($hasSearch): ?>
-        <a href="<?= e(url(adminUrl(['status' => $filters['status'], 'q' => '', 'faculty' => '', 'group' => '']))) ?>"
+        <a href="<?= e(url(adminUrl(['status' => $filters['status'], 'q' => '', 'faculty' => '', 'group' => '', 'code' => '']))) ?>"
            class="border border-slate-300 bg-white hover:bg-slate-50 rounded-md px-4 py-2 text-sm text-center">
             Tozalash
         </a>
@@ -470,15 +506,16 @@ require_once __DIR__ . '/../includes/header.php';
             <tbody>
                 <?php foreach ($reservations as $r): ?>
                     <tr class="border-t border-slate-200 align-top">
-                        <!-- Talaba FIO -->
+                        <!-- Talaba FIO va 6 belgili kodi -->
                         <td class="px-3 py-3">
                             <div class="font-semibold break-words"><?= e($r['user_name']) ?></div>
                             <div class="text-xs text-slate-500 break-all"><?= e($r['user_email']) ?></div>
+                            <?php renderCodeBadge($r['pickup_code'] ?? null, (string) $r['status']); ?>
                         </td>
 
-                        <!-- HEMIS ID: bosilganda nusxalanadi -->
-                        <td class="px-3 py-3 whitespace-nowrap text-xs">
-                            <?php renderHemisCopy($r['hemis_id'] ?? null); ?>
+                        <!-- HEMIS ID -->
+                        <td class="px-3 py-3 whitespace-nowrap font-mono text-xs">
+                            <?= !empty($r['hemis_id']) ? e($r['hemis_id']) : '<span class="text-slate-400">—</span>' ?>
                         </td>
 
                         <!-- Fakultet va guruh -->
@@ -548,6 +585,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <div class="min-w-0">
                         <div class="font-semibold break-words"><?= e($r['user_name']) ?></div>
                         <div class="text-xs text-slate-500 break-all"><?= e($r['user_email']) ?></div>
+                        <?php renderCodeBadge($r['pickup_code'] ?? null, (string) $r['status']); ?>
                     </div>
                     <div class="shrink-0"><?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? '')) ?></div>
                 </div>
@@ -555,7 +593,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <dl class="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                     <div>
                         <dt class="text-slate-500">HEMIS ID</dt>
-                        <dd class="font-semibold"><?php renderHemisCopy($r['hemis_id'] ?? null); ?></dd>
+                        <dd class="font-mono font-semibold"><?= !empty($r['hemis_id']) ? e($r['hemis_id']) : '—' ?></dd>
                     </div>
                     <div>
                         <dt class="text-slate-500">Guruh</dt>
@@ -662,6 +700,34 @@ require_once __DIR__ . '/../includes/header.php';
 
     tick();
     setInterval(tick, 1000);
+})();
+</script>
+
+<!-- ====== KOD MAYDONI (Vanilla JS) ======
+     - faqat harf va raqamni qoldiradi, harflarni KATTA qiladi (bo'shliq va tirelar o'chiriladi; "k7m 4p2" ham ishlaydi)
+     - 6-belgi yozilishi bilan formani o'zi yuboradi, kutubxonachi "Topish" bosishi shart emas
+     - katta ekranda sahifa ochilganda kursor shu maydonda turadi (tezroq ishlash uchun) -->
+<script>
+(function () {
+    'use strict';
+
+    var form  = document.getElementById('codeSearchForm');
+    var input = document.getElementById('codeInput');
+    if (!form || !input) { return; }
+
+    input.addEventListener('input', function () {
+        // Faqat lotin harf va raqamlar, katta harfda, eng ko'pi 6 ta
+        var cleaned = input.value.replace(/[^A-Za-z0-9]+/g, '').toUpperCase().slice(0, 6);
+        if (cleaned !== input.value) { input.value = cleaned; }
+
+        // 6 belgili kod to'liq kiritildi – qidiramiz
+        if (cleaned.length === 6) { form.submit(); }
+    });
+
+    // Sahifa kod qidirilmagan holatda ochilsa, kursor shu maydonda turadi
+    if (input.value === '' && window.matchMedia('(min-width: 1024px)').matches) {
+        input.focus({ preventScroll: true });
+    }
 })();
 </script>
 

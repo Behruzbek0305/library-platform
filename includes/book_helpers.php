@@ -623,11 +623,9 @@ function renderOfflineIssueForm(int $bookId, string $variant = 'modal', string $
                 Talabaning HEMIS ID si
             </label>
             <input type="text" id="off_hemis_<?= e($variant) ?>" name="hemis_id" required
-                   maxlength="<?= (int) HEMIS_ID_LENGTH ?>" minlength="<?= (int) HEMIS_ID_LENGTH ?>"
-                   pattern="\d{<?= (int) HEMIS_ID_LENGTH ?>}" inputmode="numeric" autocomplete="off"
-                   data-digits-only
-                   placeholder="Masalan: 341231102185" class="<?= $fieldClass ?>">
-            <p class="text-xs text-slate-500">Faqat raqam, aniq <?= (int) HEMIS_ID_LENGTH ?> ta.</p>
+                   maxlength="20" inputmode="numeric" autocomplete="off"
+                   placeholder="Masalan: 123456789012" class="<?= $fieldClass ?>">
+            <p class="text-xs text-slate-500">Faqat raqam (6 tadan 20 tagacha).</p>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -685,32 +683,82 @@ function renderOfflineIssueForm(int $bookId, string $variant = 'modal', string $
     <?php
 }
 
-/**
- * ============================================================
- *  HEMIS ID – BOSILGANDA NUSXALANADIGAN KO'RINISH
- *  Admin panelda ham, "Mening kabinetim"da ham shu funksiya ishlatiladi.
- *  Tugma bosilganda assets/js/hemis.js qiymatni vaqtinchalik xotiraga
- *  (clipboard) nusxalaydi va "Nusxalandi" xabarini ko'rsatadi.
- *  JavaScript o'chiq bo'lsa ham raqam ko'rinib turadi (matn sifatida).
- *  HEMIS ID bo'sh bo'lsa – "—" chiqadi.
- * ============================================================
- */
-function renderHemisCopy(?string $hemisId): void
-{
-    $hemisId = trim((string) $hemisId);
+// ------------------------------------------------------------
+// 5.1. BAND QILISH KODI (6 belgili: harf + raqam, takrorlanmaydigan)
+//      Talaba kutubxonaga borganda shu kodni ko'rsatadi, kutubxonachi
+//      uni admin panelda kiritib, buyurtmani bir zumda topadi.
+//      Misol: K7M4P2 (ekranda "K7M 4P2" ko'rinishida chiqadi).
+//
+//      Alfavitdan ko'z adashtiradigan belgilar CHIQARIB TASHLANGAN:
+//      0 va O, 1 va I va L – og'zaki aytganda adashib ketmaslik uchun.
+//      Qoldi: 23 ta harf + 8 ta raqam = 31 belgi → 31^6 ≈ 887 million kod.
+// ------------------------------------------------------------
+const RESERVATION_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const RESERVATION_CODE_LENGTH   = 6;
 
-    if ($hemisId === '') {
-        echo '<span class="text-slate-400">—</span>';
+/**
+ * Kiritilgan matnni kod ko'rinishiga keltiradi: bo'shliq, tire va boshqa
+ * belgilar olib tashlanadi, harflar KATTA qilinadi, eng ko'pi 6 belgi.
+ * "k7m 4p2" → "K7M4P2". Qidiruv maydoni va tekshiruvlarda ishlatiladi.
+ */
+function normalizeReservationCode(string $value): string
+{
+    $clean = strtoupper((string) preg_replace('/[^A-Za-z0-9]+/', '', $value));
+    return substr($clean, 0, RESERVATION_CODE_LENGTH);
+}
+
+/**
+ * Bazada hali yo'q bo'lgan 6 belgili tasodifiy kod yaratadi.
+ * random_int() – kriptografik xavfsiz generator (kodni oldindan taxmin qilib bo'lmaydi).
+ *
+ * @throws RuntimeException – 20 urinishda ham bo'sh kod topilmasa (amalda bo'lmaydi)
+ */
+function generateReservationCode(PDO $pdo): string
+{
+    $check = $pdo->prepare('SELECT COUNT(*) FROM reservations WHERE pickup_code = :code');
+    $max   = strlen(RESERVATION_CODE_ALPHABET) - 1;
+
+    for ($i = 0; $i < 20; $i++) {
+        $code = '';
+        for ($j = 0; $j < RESERVATION_CODE_LENGTH; $j++) {
+            $code .= RESERVATION_CODE_ALPHABET[random_int(0, $max)];
+        }
+
+        $check->execute([':code' => $code]);
+        if ((int) $check->fetchColumn() === 0) {
+            return $code;
+        }
+    }
+
+    throw new RuntimeException('Bo\'sh band qilish kodini topib bo\'lmadi.');
+}
+
+/** Kodni o'qishga qulay ko'rinishda chiqaradi: "K7M4P2" → "K7M 4P2" */
+function formatReservationCode(string $code): string
+{
+    $code = strtoupper($code);
+    return strlen($code) === RESERVATION_CODE_LENGTH ? substr($code, 0, 3) . ' ' . substr($code, 3) : $code;
+}
+
+/**
+ * Admin panelda buyurtma yonida kichik kod belgisini chizadi.
+ * Kod bo'sh bo'lsa (offlayn berilgan yoki eski yozuv) hech narsa chiqmaydi.
+ * Kutilayotgan buyurtmada belgi ko'zga tashlanadigan (sariq) bo'ladi.
+ */
+function renderCodeBadge(?string $code, string $status): void
+{
+    if ($code === null || $code === '') {
         return;
     }
+
+    $cls = $status === 'kutilmoqda'
+        ? 'bg-amber-100 text-amber-800 border-amber-300'
+        : 'bg-slate-100 text-slate-600 border-slate-200';
     ?>
-    <button type="button" data-copy="<?= e($hemisId) ?>"
-            title="Nusxalash uchun bosing"
-            aria-label="HEMIS ID ni nusxalash: <?= e($hemisId) ?>"
-            class="font-mono font-semibold rounded px-1 -mx-1 cursor-copy transition
-                   hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300">
-        <?= e($hemisId) ?>
-    </button>
+    <span class="inline-block mt-1 px-1.5 py-0.5 rounded border font-mono text-xs font-bold tracking-wider <?= e($cls) ?>"
+          title="Talaba kodi">
+        🔑 <?= e(formatReservationCode($code)) ?>
+    </span>
     <?php
 }
 

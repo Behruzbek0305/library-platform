@@ -9,6 +9,10 @@
  *  bo'sh nusxa bor, shu kitob avval band qilinmagan.
  *  Ikki talaba bir vaqtda oxirgi nusxani band qilmasligi uchun
  *  tranzaksiya va "FOR UPDATE" qulfi ishlatiladi.
+ *
+ *  YANGI: har bir band qilishga 6 belgili (harf + raqam) noyob kod (pickup_code)
+ *  beriladi. Talaba uni kutubxonada ko'rsatadi, kutubxonachi admin
+ *  panelda shu kod bilan buyurtmani tez topadi.
  * ============================================================
  */
 
@@ -96,18 +100,45 @@ try {
         redirect($bookPage);
     }
 
-    // Band qilishni yozamiz (holati: kutilmoqda – kutubxonachi tasdiqlaydi)
-    $stmt = $pdo->prepare(
-        "INSERT INTO reservations (user_id, book_id, reserved_date, pickup_days, pickup_deadline, status)
-         VALUES (:user_id, :book_id, :reserved_date, :pickup_days, :pickup_deadline, 'kutilmoqda')"
+    // Band qilishni yozamiz (holati: kutilmoqda – kutubxonachi tasdiqlaydi).
+    // pickup_code: 6 belgili (harf + raqam) noyob kod. Kamdan-kam hollarda ikki talaba bir
+    // soniyada bir xil kod olib qolsa, UNIQUE kalit xato beradi (SQLSTATE 23000) –
+    // shunda yangi kod yaratib, INSERT'ni qayta urinamiz (eng ko'pi 5 marta).
+    // InnoDB'da xato bergan INSERT tranzaksiyani buzmaydi, shuning uchun davom etish mumkin.
+    $insert = $pdo->prepare(
+        "INSERT INTO reservations (user_id, book_id, reserved_date, pickup_days, pickup_deadline, pickup_code, status)
+         VALUES (:user_id, :book_id, :reserved_date, :pickup_days, :pickup_deadline, :pickup_code, 'kutilmoqda')"
     );
-    $stmt->execute([
-        ':user_id'         => $user['id'],
-        ':book_id'         => $bookId,
-        ':reserved_date'   => date('Y-m-d'),
-        ':pickup_days'     => $pickupDays,
-        ':pickup_deadline' => $pickupDeadline,
-    ]);
+
+    $pickupCode = '';
+    $inserted   = false;
+
+    for ($attempt = 0; $attempt < 5 && !$inserted; $attempt++) {
+        $pickupCode = generateReservationCode($pdo);
+
+        try {
+            $insert->execute([
+                ':user_id'         => $user['id'],
+                ':book_id'         => $bookId,
+                ':reserved_date'   => date('Y-m-d'),
+                ':pickup_days'     => $pickupDays,
+                ':pickup_deadline' => $pickupDeadline,
+                ':pickup_code'     => $pickupCode,
+            ]);
+            $inserted = true;
+        } catch (PDOException $ex) {
+            // Faqat "kod takrorlandi" xatosida qayta urinamiz, boshqa xatolik – yuqoriga uzatiladi
+            if ((string) $ex->getCode() !== '23000') {
+                throw $ex;
+            }
+        }
+    }
+
+    if (!$inserted) {
+        $pdo->rollBack();
+        setFlash('error', "Band qilish kodini yaratib bo'lmadi. Qayta urinib ko'ring.");
+        redirect($bookPage);
+    }
 
     // Bo'sh nusxani 1 taga kamaytiramiz (qator qulflangan, shuning uchun xavfsiz)
     if (!decrementAvailableCopies($pdo, $bookId)) {
@@ -119,10 +150,13 @@ try {
     $pdo->commit();
 
     $deadlineText = date('d.m.Y H:i', strtotime($pickupDeadline));
-    setFlash('success', "«" . $book['title'] . "» band qilindi! Olib ketish muddati: {$pickupDays} kun ({$deadlineText} gacha). Kutubxonachi tasdiqlashini kuting.");
+    setFlash('success',
+        "«" . $book['title'] . "» band qilindi! Sizning kodingiz: " . formatReservationCode($pickupCode)
+        . ". Kutubxonada shu kodni ko'rsating. Olib ketish muddati: {$pickupDays} kun ({$deadlineText} gacha)."
+    );
     redirect('cabinet.php');
 
-} catch (PDOException $ex) {
+} catch (PDOException | RuntimeException $ex) {
     // Xatolik bo'lsa, tranzaksiyani bekor qilamiz
     if ($pdo->inTransaction()) {
         $pdo->rollBack();

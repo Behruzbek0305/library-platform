@@ -15,6 +15,9 @@
  *    Muddat HTML'da data-expires="2026-11-05T18:00:00+05:00" ko'rinishida
  *    turadi, sahifa oxiridagi JavaScript uni har soniyada yangilaydi:
  *    "01 kun 02:15:40". Muddat o'tsa – qizil "Muddati tugadi" belgisi chiqadi.
+ *
+ *  YANGI: "kutilmoqda" holatidagi buyurtmada 6 belgili talaba kodi (harf + raqam, pickup_code)
+ *  katta ko'rinishda chiqadi – talaba uni kutubxonada ko'rsatadi.
  * ============================================================
  */
 
@@ -96,6 +99,29 @@ function renderDeadlineTimer(array $r): void
     <?php
 }
 
+/**
+ * Band qilish kodini katta, o'qish oson ko'rinishda chizadi.
+ * Faqat "kutilmoqda" holatida ko'rsatiladi: talaba kutubxonaga borib shu kodni aytadi.
+ * Kod bo'sh bo'lsa (eski yozuvlar) hech narsa chiqmaydi.
+ */
+function renderPickupCode(array $r): void
+{
+    $code = (string) ($r['pickup_code'] ?? '');
+
+    if ($r['status'] !== 'kutilmoqda' || $code === '') {
+        return;
+    }
+    ?>
+    <div class="mt-2 inline-block rounded-lg border-2 border-dashed border-blue-300 bg-blue-50 px-3 py-2">
+        <div class="text-[11px] uppercase tracking-wide text-blue-700">Sizning kodingiz</div>
+        <div class="font-mono text-2xl font-bold tracking-[0.2em] text-blue-800 select-all">
+            <?= e(formatReservationCode($code)) ?>
+        </div>
+        <div class="text-[11px] text-slate-500">Kutubxonada shu kodni ko'rsating</div>
+    </div>
+    <?php
+}
+
 // ------------------------------------------------------------
 // 1. BEKOR QILISH (POST)
 // ------------------------------------------------------------
@@ -162,7 +188,7 @@ $reservations = [];
 try {
     $stmt = $pdo->prepare(
         'SELECT r.id, r.reserved_date, r.pickup_days, r.pickup_deadline, r.status,
-                r.picked_up_at, r.returned_at, r.due_date,
+                r.picked_up_at, r.returned_at, r.due_date, r.pickup_code,
                 b.id AS book_id, b.title, b.author
          FROM reservations r
          JOIN books b ON b.id = r.book_id
@@ -220,11 +246,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="min-w-0">
                 <dt class="text-slate-500"><?= e($label) ?></dt>
                 <dd class="font-semibold break-words">
-                    <?php if ($value !== '' && $label === 'HEMIS ID'): ?>
-                        <!-- HEMIS ID: bosilganda nusxalanadi (assets/js/hemis.js) -->
-                        <?php renderHemisCopy($value); ?>
-                        <span class="text-xs font-normal text-slate-400 ml-1">(nusxalash uchun bosing)</span>
-                    <?php elseif ($value !== ''): ?>
+                    <?php if ($value !== ''): ?>
                         <?= e($value) ?>
                     <?php else: ?>
                         <span class="text-amber-600 font-normal">kiritilmagan</span>
@@ -263,6 +285,7 @@ require_once __DIR__ . '/includes/header.php';
                             <a href="<?= e(url('book.php?id=' . (int) $r['book_id'])) ?>"
                                class="font-semibold text-blue-600 hover:underline break-words"><?= e($r['title']) ?></a>
                             <div class="text-slate-500 break-words"><?= e($r['author']) ?></div>
+                            <?php renderPickupCode($r); ?>
                         </td>
                         <td class="px-4 py-3 text-xs">
                             <div>Band qilingan: <b><?= e(date('d.m.Y', strtotime((string) $r['reserved_date']))) ?></b></div>
@@ -318,6 +341,8 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
                     <div class="shrink-0"><?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? ''), (string) ($r['due_date'] ?? '')) ?></div>
                 </div>
+
+                <?php renderPickupCode($r); ?>
 
                 <div class="mt-2 text-xs text-slate-600 space-y-1">
                     <div>Band qilingan: <b><?= e(date('d.m.Y', strtotime((string) $r['reserved_date']))) ?></b></div>
