@@ -8,24 +8,23 @@
  *  Amallar (hammasi POST + CSRF):
  *    approve – "kutilmoqda"  → "tasdiqlandi"  (picked_up_at va served_by yoziladi)
  *    return  – "tasdiqlandi" → "qaytarildi"   (returned_at yoziladi, nusxa yana bo'sh)
- *    reject  – "kutilmoqda" → "rad_etildi"   (yozuv saqlanadi, talaba ham ko'radi)
+ *    reject  – "kutilmoqda"  → "rad_etildi"   (yozuv saqlanadi, talaba ham ko'radi)
  *
- *  Imkoniyatlar:
- *    - jadval alohida ustunlarga bo'lingan: FIO, HEMIS ID, fakultet va guruh, kitob,
- *      band qilingan vaqt + jonli taymer, berilgan/qaytarilgan sana, holat, harakatlar
- *    - kutilayotganlar ichida muddati eng oz qolgani eng tepada
- *    - HEMIS ID bo'yicha qidiruv, fakultet va guruh bo'yicha filtr
- *    - "Tasdiqlash" bosilganda served_by, «Qaytarildi» da returned_by,
- *      "Rad etish" da rejected_by ga joriy kutubxonachi ID si yoziladi
+ *  REFAKTORING (ixcham 8 ustunli jadval, gorizontal scroll YO'Q):
+ *    1. Talaba FIO      – FIO + Email + 🔑 Generatsiya kodi (sariq badge)
+ *    2. HEMIS ID        – sof raqamli ID
+ *    3. Fakultet/Guruh  – fakultet nomi + guruh badge
+ *    4. Kitob           – kitob nomi (havola) + kategoriya
+ *    5. Band qilingan   – sana/vaqt + qolgan vaqt taymeri
+ *    6. Berilgan/Qaytarilgan/Xodim – sanalar + tasdiqlagan xodim ismi
+ *    7. Holati          – status badge
+ *    8. Harakatlar      – Tasdiqlash / Qaytarildi / Rad etish
+ *    Jadval "table-fixed" va ustun kengliklari foizda berilgan, matn katakcha
+ *    ichida qatorlarga bo'linadi (break-words), shuning uchun yon tomonga
+ *    aylantirish kerak bo'lmaydi.
  *
- *  YANGI: TALABA KODI (pickup_code) BO'YICHA TEZKOR QIDIRUV
- *    Talaba kutubxonada 6 belgili kodni (harf + raqam, masalan K7M 4P2) aytadi. Kutubxonachi uni yuqoridagi
- *    "Talaba kodi" maydoniga yozadi – 6-belgi kiritilishi bilan buyurtma
- *    o'zi topiladi va "Tasdiqlash" tugmasini bosadi.
- *    (Oldin migrations/008_pickup_code.sql ishga tushirilgan bo'lishi kerak.)
- *
- *  Eslatma: so'rovdagi "expires_at" bazada "pickup_deadline",
- *  "reserved_at" esa "created_at" ustuniga to'g'ri keladi.
+ *  Talaba kodi (pickup_code) bo'yicha tezkor qidiruv avvalgidek ishlaydi.
+ *  (Oldin migrations/008_pickup_code.sql ishga tushirilgan bo'lishi kerak.)
  * ============================================================
  */
 
@@ -84,20 +83,51 @@ function adminUrl(array $filters): string
 }
 
 /**
+ * 🔑 GENERATSIYA KODI belgisi (sariq badge).
+ * FIO va Email tagida HAR DOIM ko'rinadi:
+ *  - kod bor bo'lsa: "🔑 Generatsiya kodi: K7M 4P2"
+ *  - kod yo'q bo'lsa (offlayn berilgan yoki eski yozuv): "🔑 Kod yo'q" (kulrang izoh bilan)
+ */
+function renderGenerationCode(?string $code, bool $isOffline): void
+{
+    $code = trim((string) $code);
+
+    if ($code !== '') {
+        ?>
+        <div class="mt-1.5 inline-flex flex-wrap items-center gap-x-1.5 px-2 py-1 rounded-md border
+                    bg-amber-100 text-amber-900 border-amber-300 text-[11px] leading-tight"
+             title="Talaba kodi">
+            <span class="font-semibold">🔑 Code:</span>
+            <span class="font-mono text-xs font-bold tracking-wider"><?= e(formatReservationCode($code)) ?></span>
+        </div>
+        <?php
+        return;
+    }
+
+    // Kod yo'q: sabab ko'rsatiladi, shunda "kod yo'qolib qoldi" degan shubha tug'ilmaydi
+    ?>
+    <div class="mt-1.5 inline-flex items-center gap-1.5 px-2 py-1 rounded-md border
+                bg-slate-50 text-slate-500 border-slate-200 text-[11px] leading-tight">
+        <span>🔑 Kod yo'q</span>
+        <span class="text-slate-400">(<?= $isOffline ? 'offlayn berilgan' : 'eski yozuv' ?>)</span>
+    </div>
+    <?php
+}
+
+/**
  * Holatga qarab amal tugmalarini chizadi.
- * $compact = true bo'lsa (telefon kartochkasi) tugmalar keng va katta bo'ladi.
+ * $compact = true bo'lsa (telefon kartochkasi) tugmalar yonma-yon, keng va katta bo'ladi.
+ * $compact = false bo'lsa (jadval) tor ustunga sig'ishi uchun tugmalar ustma-ust turadi.
  * Formalar filtrlarni yashirin maydonlarda olib yuradi, shunda amaldan keyin
  * kutubxonachi o'sha qidiruv natijasida qoladi.
  */
 function renderActions(array $r, array $filters, bool $compact): void
 {
     $status = (string) $r['status'];
-    if ($status !== 'kutilmoqda' && $status !== 'tasdiqlandi') {
+    if ($status !== 'kutilmoqda' && $status !== 'tasdiqlandi' && $status !== 'berilgan') {
         echo '<span class="text-xs text-slate-400">—</span>';
         return;
     }
-
-    $size = $compact ? 'w-full text-sm py-2' : 'text-xs px-3 py-1.5';
 
     // Tugmalar ro'yxati: [amal, yozuv, rang, tasdiq matni]
     $buttons = $status === 'kutilmoqda'
@@ -110,7 +140,12 @@ function renderActions(array $r, array $filters, bool $compact): void
             ['return', 'Qaytarildi', 'bg-blue-600 hover:bg-blue-700', null],
         ];
 
-    echo '<div class="' . ($compact ? 'grid grid-cols-' . count($buttons) . ' gap-2' : 'flex flex-wrap gap-2') . '">';
+    $size = $compact ? 'w-full text-sm py-2' : 'w-full text-xs px-2 py-1.5';
+
+    // Telefonda: yonma-yon (grid); jadvalda: ustma-ust (flex-col)
+    echo '<div class="' . ($compact
+        ? 'grid grid-cols-' . count($buttons) . ' gap-2'
+        : 'flex flex-col gap-1.5 w-full') . '">';
 
     foreach ($buttons as [$action, $label, $color, $confirmText]) {
         // Tasdiq oynasi matni JS satriga xavfsiz joylanadi (json_encode + e)
@@ -213,7 +248,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $message = 'Band qilish tasdiqlandi. Kitob berilgan vaqt va mas\'ul xodim saqlandi.';
 
         } elseif ($action === 'return') {
-            // Qaytarildi: qaytarilgan vaqt yoziladi (nusxa BOOK_SELECT orqali o'zi bo'shaydi)
+            // Qaytarildi: qaytarilgan vaqt yoziladi
             $stmt = $pdo->prepare(
                 "UPDATE reservations
                  SET status = 'qaytarildi', returned_at = :now, returned_by = :staff_id
@@ -301,14 +336,15 @@ try {
     )->fetchAll(PDO::FETCH_COLUMN);
 
     // Band qilishlar ro'yxati (hamma shart prepared statement orqali).
-    // "staff" – so'rovga xizmat ko'rsatgan kutubxonachi (served_by). LEFT JOIN
-    // ishlatilgani uchun xodim biriktirilmagan so'rovlar ham ro'yxatdan tushib qolmaydi.
+    // b.category – "Kitob" ustunida kategoriyani ko'rsatish uchun qo'shildi.
+    // LEFT JOIN ishlatilgani uchun xodim biriktirilmagan so'rovlar ham tushib qolmaydi.
     $sql = 'SELECT r.id, r.reserved_date, r.created_at, r.pickup_days, r.pickup_deadline, r.status,
-                   r.picked_up_at, r.returned_at, r.is_offline, r.served_by, r.returned_by, r.rejected_by,
+                   r.picked_up_at, r.due_date, r.returned_at, r.is_offline,
+                   r.served_by, r.returned_by, r.rejected_by,
                    r.pickup_code,
                    u.name AS user_name, u.email AS user_email,
                    u.faculty, u.direction, u.group_name, u.hemis_id,
-                   b.id AS book_id, b.title AS book_title,
+                   b.id AS book_id, b.title AS book_title, b.category AS book_category,
                    staff.name    AS staff_name,
                    returner.name AS returner_name,
                    rejecter.name AS rejecter_name
@@ -488,53 +524,75 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 <?php else: ?>
 
-    <!-- Kompyuter (1024px dan keng): jadval. Ustunlar kengroq bo'lgani uchun lg dan boshlanadi -->
-    <div class="hidden lg:block bg-white border border-slate-200 rounded-xl overflow-x-auto">
-        <table class="w-full text-sm text-left">
+    <!-- ====== KOMPYUTER (1024px dan keng): IXCHAM 8 USTUNLI JADVAL ======
+         table-fixed + foizli kengliklar (jami 100%) + break-words = gorizontal scroll yo'q.
+         Ma'lumotlar har bir katakcha ichida ustma-ust (multi-line) joylashadi. -->
+    <div class="hidden lg:block bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <table class="w-full table-fixed text-xs text-left">
+            <colgroup>
+                <col style="width: 19%"> <!-- 1. Talaba FIO -->
+                <col style="width: 9%">  <!-- 2. HEMIS ID -->
+                <col style="width: 13%"> <!-- 3. Fakultet va guruh -->
+                <col style="width: 14%"> <!-- 4. Kitob -->
+                <col style="width: 13%"> <!-- 5. Band qilingan / qolgan muddat -->
+                <col style="width: 15%"> <!-- 6. Berilgan / qaytarilgan / xodim -->
+                <col style="width: 8%">  <!-- 7. Holati -->
+                <col style="width: 9%">  <!-- 8. Harakatlar -->
+            </colgroup>
             <thead class="bg-slate-50 text-slate-600">
                 <tr>
-                    <th class="px-3 py-3 font-semibold">Talaba FIO</th>
-                    <th class="px-3 py-3 font-semibold">HEMIS ID</th>
-                    <th class="px-3 py-3 font-semibold">Fakultet va guruh</th>
-                    <th class="px-3 py-3 font-semibold">Kitob</th>
-                    <th class="px-3 py-3 font-semibold">Band qilingan / Qolgan muddat</th>
-                    <th class="px-3 py-3 font-semibold">Berilgan / Qaytarilgan / Xodim</th>
-                    <th class="px-3 py-3 font-semibold">Holati</th>
-                    <th class="px-3 py-3 font-semibold text-right">Harakatlar</th>
+                    <th class="px-2.5 py-3 font-semibold">Talaba FIO</th>
+                    <th class="px-2.5 py-3 font-semibold">HEMIS ID</th>
+                    <th class="px-2.5 py-3 font-semibold">Fakultet va guruh</th>
+                    <th class="px-2.5 py-3 font-semibold">Kitob</th>
+                    <th class="px-2.5 py-3 font-semibold">Band qilingan / Qolgan muddat</th>
+                    <th class="px-2.5 py-3 font-semibold">Berilgan / Qaytarilgan / Xodim</th>
+                    <th class="px-2.5 py-3 font-semibold">Holati</th>
+                    <th class="px-2.5 py-3 font-semibold">Harakatlar</th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($reservations as $r): ?>
                     <tr class="border-t border-slate-200 align-top">
-                        <!-- Talaba FIO va 6 belgili kodi -->
-                        <td class="px-3 py-3">
-                            <div class="font-semibold break-words"><?= e($r['user_name']) ?></div>
-                            <div class="text-xs text-slate-500 break-all"><?= e($r['user_email']) ?></div>
-                            <?php renderCodeBadge($r['pickup_code'] ?? null, (string) $r['status']); ?>
+
+                        <!-- 1. FIO (qora, bold) + Email (kulrang) + 🔑 Generatsiya kodi (sariq badge) -->
+                        <td class="px-2.5 py-3">
+                            <div class="font-bold text-slate-900 text-[13px] leading-snug break-words"><?= e($r['user_name']) ?></div>
+                            <div class="text-slate-500 break-all"><?= e($r['user_email']) ?></div>
+                            <?php renderGenerationCode($r['pickup_code'] ?? null, (int) $r['is_offline'] === 1); ?>
                         </td>
 
-                        <!-- HEMIS ID -->
-                        <td class="px-3 py-3 whitespace-nowrap font-mono text-xs">
+                        <!-- 2. HEMIS ID: sof raqamli -->
+                        <td class="px-2.5 py-3 font-mono break-all">
                             <?= !empty($r['hemis_id']) ? e($r['hemis_id']) : '<span class="text-slate-400">—</span>' ?>
                         </td>
 
-                        <!-- Fakultet va guruh -->
-                        <td class="px-3 py-3 text-xs">
-                            <div class="break-words"><?= !empty($r['faculty']) ? e($r['faculty']) : '<span class="text-slate-400">—</span>' ?></div>
+                        <!-- 3. Fakultet nomi + guruh badge -->
+                        <td class="px-2.5 py-3">
+                            <div class="break-words leading-snug">
+                                <?= !empty($r['faculty']) ? e($r['faculty']) : '<span class="text-slate-400">—</span>' ?>
+                            </div>
                             <?php if (!empty($r['group_name'])): ?>
-                                <span class="inline-block mt-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium"><?= e($r['group_name']) ?></span>
+                                <span class="inline-block mt-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium break-all">
+                                    <?= e($r['group_name']) ?>
+                                </span>
                             <?php endif; ?>
                         </td>
 
-                        <!-- Kitob nomi -->
-                        <td class="px-3 py-3">
+                        <!-- 4. Kitob nomi (havola) + kategoriya -->
+                        <td class="px-2.5 py-3">
                             <a href="<?= e(url('book.php?id=' . (int) $r['book_id'])) ?>"
-                               class="text-blue-600 hover:underline break-words"><?= e($r['book_title']) ?></a>
+                               class="text-blue-600 hover:underline font-semibold break-words leading-snug"><?= e($r['book_title']) ?></a>
+                            <div>
+                                <span class="inline-block mt-1 px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                                    <?= e($r['book_category']) ?>
+                                </span>
+                            </div>
                         </td>
 
-                        <!-- Band qilingan vaqt va qolgan muddat (taymer) -->
-                        <td class="px-3 py-3 text-xs">
-                            <div><b><?= e(formatDateTime((string) $r['created_at'])) ?></b></div>
+                        <!-- 5. Band qilingan sana/vaqt + qolgan vaqt taymeri -->
+                        <td class="px-2.5 py-3">
+                            <div class="font-bold"><?= e(formatDateTime((string) $r['created_at'])) ?></div>
                             <?php if (!empty($r['pickup_deadline'])): ?>
                                 <div class="text-slate-600 mt-0.5">
                                     <?= (int) $r['pickup_days'] ?> kun · <?= e(formatDateTime((string) $r['pickup_deadline'])) ?> gacha
@@ -543,8 +601,8 @@ require_once __DIR__ . '/../includes/header.php';
                             <?php renderTimer($r); ?>
                         </td>
 
-                        <!-- Olib ketilgan va qaytarilgan sana + mas'ul xodim -->
-                        <td class="px-3 py-3 text-xs">
+                        <!-- 6. Berilgan sana/vaqt (+ qaytarilgan) + tasdiqlagan xodim ismi -->
+                        <td class="px-2.5 py-3">
                             <?php if (!empty($r['picked_up_at'])): ?>
                                 <div class="text-green-700">Berilgan: <b><?= e(formatDateTime((string) $r['picked_up_at'])) ?></b></div>
                             <?php endif; ?>
@@ -555,21 +613,21 @@ require_once __DIR__ . '/../includes/header.php';
                                 <span class="inline-block mt-1 px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-medium">Offlayn</span>
                             <?php endif; ?>
                             <?php if (empty($r['picked_up_at']) && empty($r['returned_at']) && (int) $r['is_offline'] !== 1): ?>
-                                <span class="text-slate-400">—</span>
+                                <div class="text-slate-400">—</div>
                             <?php endif; ?>
 
-                            <!-- Xodimlar izi: tasdiqlagan / qaytarilgan deb belgilagan / rad etgan -->
+                            <!-- Xodimlar izi: tasdiqlagan / qaytarilgan deb belgilagan / rad etgan xodim ismi -->
                             <?php renderStaffTrail($r); ?>
                         </td>
 
-                        <!-- Holati -->
-                        <td class="px-3 py-3">
-                            <?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? '')) ?>
+                        <!-- 7. Holati -->
+                        <td class="px-2.5 py-3">
+                            <?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? ''), (string) ($r['due_date'] ?? '')) ?>
                         </td>
 
-                        <!-- Harakatlar -->
-                        <td class="px-3 py-3">
-                            <div class="flex justify-end"><?php renderActions($r, $filters, false); ?></div>
+                        <!-- 8. Harakatlar (tor ustunda ustma-ust) -->
+                        <td class="px-2.5 py-3">
+                            <?php renderActions($r, $filters, false); ?>
                         </td>
                     </tr>
                 <?php endforeach; ?>
@@ -577,17 +635,17 @@ require_once __DIR__ . '/../includes/header.php';
         </table>
     </div>
 
-    <!-- Telefon va planshet (1024px dan tor): har bir band qilish alohida kartochka -->
+    <!-- ====== TELEFON VA PLANSHET (1024px dan tor): har bir band qilish alohida kartochka ====== -->
     <div class="lg:hidden space-y-3">
         <?php foreach ($reservations as $r): ?>
             <div class="bg-white border border-slate-200 rounded-xl p-4">
                 <div class="flex items-start justify-between gap-2">
                     <div class="min-w-0">
-                        <div class="font-semibold break-words"><?= e($r['user_name']) ?></div>
+                        <div class="font-bold text-slate-900 break-words"><?= e($r['user_name']) ?></div>
                         <div class="text-xs text-slate-500 break-all"><?= e($r['user_email']) ?></div>
-                        <?php renderCodeBadge($r['pickup_code'] ?? null, (string) $r['status']); ?>
+                        <?php renderGenerationCode($r['pickup_code'] ?? null, (int) $r['is_offline'] === 1); ?>
                     </div>
-                    <div class="shrink-0"><?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? '')) ?></div>
+                    <div class="shrink-0"><?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? ''), (string) ($r['due_date'] ?? '')) ?></div>
                 </div>
 
                 <dl class="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
@@ -608,6 +666,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <dd>
                             <a href="<?= e(url('book.php?id=' . (int) $r['book_id'])) ?>"
                                class="font-semibold text-sm text-blue-600 hover:underline break-words"><?= e($r['book_title']) ?></a>
+                            <span class="ml-1 px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600"><?= e($r['book_category']) ?></span>
                         </dd>
                     </div>
                     <div class="col-span-2">
@@ -644,7 +703,7 @@ require_once __DIR__ . '/../includes/header.php';
                     </div>
                 </dl>
 
-                <?php if ($r['status'] === 'kutilmoqda' || $r['status'] === 'tasdiqlandi'): ?>
+                <?php if (in_array($r['status'], ['kutilmoqda', 'tasdiqlandi', 'berilgan'], true)): ?>
                     <div class="mt-3"><?php renderActions($r, $filters, true); ?></div>
                 <?php endif; ?>
             </div>
