@@ -305,8 +305,12 @@ function deleteCoverFile(?string $relativePath): void
 //    $dueDate  – qaytarish muddati (berilgan uchun; o'tsa KECHIKISH hisoblanadi,
 //                kitob baribir talaba qo'lida qolaveradi)
 // ------------------------------------------------------------
-function statusBadge(string $status, ?string $deadline = null, ?string $dueDate = null): string
+function statusBadge(string $status, ?string $deadline = null, ?string $dueDate = null, ?int $auto = null): string
 {
+    if ($status === 'rad_etildi' && $auto) {
+        return '<span class="whitespace-nowrap text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-300 font-medium">⏱️ Avto-rad etilgan</span>';
+    }
+    
     if ($status === 'rad_etildi') {
         $isOverdue = $deadline !== null && $deadline !== '' && strtotime($deadline) < time();
         $label = $isOverdue ? "Rad etildi (muddati o'tgan)" : "Rad etildi";
@@ -421,8 +425,8 @@ function expireOverdueReservations(PDO $pdo): int
         if ($expired) {
             $upd = $pdo->prepare(
                 "UPDATE reservations
-                 SET status = 'rad_etildi'
-                 WHERE id = :id AND status = 'kutilmoqda'"
+                SET status = 'rad_etildi', auto_rejected = 1
+                WHERE id = :id AND status = 'kutilmoqda'"
             );
             foreach ($expired as $row) {
                 $upd->execute([':id' => (int) $row['id']]);

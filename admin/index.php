@@ -1,30 +1,25 @@
 <?php
 /**
  * ============================================================
- *  Fayl: admin/index.php – Admin panel: band qilishlar
- *  Funksional talab №8 (Texnik topshiriq, 4-band):
- *  kutubxonachi band qilishlar ro'yxatini ko'radi va tasdiqlaydi.
+ *  Fayl: admin/index.php – Admin panel: band qilishlar (REFAKTORING)
+ *  Funksional talab №8 (Texnik topshiriq, 4-band).
  *
  *  Amallar (hammasi POST + CSRF):
- *    approve – "kutilmoqda"  → "tasdiqlandi"  (picked_up_at va served_by yoziladi)
- *    return  – "tasdiqlandi" → "qaytarildi"   (returned_at yoziladi, nusxa yana bo'sh)
- *    reject  – "kutilmoqda"  → "rad_etildi"   (yozuv saqlanadi, talaba ham ko'radi)
+ *    approve – "kutilmoqda"  → "tasdiqlandi"
+ *    return  – "tasdiqlandi" → "qaytarildi"
+ *    reject  – "kutilmoqda"  → "rad_etildi"
  *
- *  REFAKTORING (ixcham 8 ustunli jadval, gorizontal scroll YO'Q):
- *    1. Talaba FIO      – FIO + Email + 🔑 Generatsiya kodi (sariq badge)
- *    2. HEMIS ID        – sof raqamli ID
- *    3. Fakultet/Guruh  – fakultet nomi + guruh badge
- *    4. Kitob           – kitob nomi (havola) + kategoriya
- *    5. Band qilingan   – sana/vaqt + qolgan vaqt taymeri
- *    6. Berilgan/Qaytarilgan/Xodim – sanalar + tasdiqlagan xodim ismi
- *    7. Holati          – status badge
- *    8. Harakatlar      – Tasdiqlash / Qaytarildi / Rad etish
- *    Jadval "table-fixed" va ustun kengliklari foizda berilgan, matn katakcha
- *    ichida qatorlarga bo'linadi (break-words), shuning uchun yon tomonga
- *    aylantirish kerak bo'lmaydi.
+ *  Yangiliklar:
+ *    - 8 ta ixcham ustun, gorizontal scroll YO'Q (jadval ekranga 100% moslashadi)
+ *    - "HEMIS ID" va "Holati" ustunlari whitespace-nowrap (bitta qatorda)
+ *    - "🔑 Talaba kodi" sariq badge talaba FIO si tagida saqlanadi
+ *    - auto_rejected = 1 bo'lsa: "⏱️ Avto-rad etilgan" belgisi
+ *    - "Kitob" ustunida ixcham muqova rasmi; kitob nomi/rasmi bosilganda
+ *      buyurtma tafsilotlari modali ochiladi
  *
- *  Talaba kodi (pickup_code) bo'yicha tezkor qidiruv avvalgidek ishlaydi.
- *  (Oldin migrations/008_pickup_code.sql ishga tushirilgan bo'lishi kerak.)
+ *  Eslatma: avval migrations/009_auto_rejected.sql ni ishga tushiring.
+ *  Ustun hali yo'q bo'lsa ham sahifa ishlaydi: u holda "rad etgan xodim yo'q"
+ *  (rejected_by IS NULL) rad etilgan yozuvlar avto-rad etilgan deb hisoblanadi.
  * ============================================================
  */
 
@@ -53,10 +48,7 @@ function formatDateTime(?string $value): string
     return date('d.m.Y H:i', strtotime($value));
 }
 
-/**
- * Filtrlarni xavfsiz tarzda oladi (GET yoki POST massividan).
- * Qaytaradi: ['status' => ..., 'q' => ..., 'faculty' => ..., 'group' => ..., 'code' => ...]
- */
+/** Filtrlarni xavfsiz oladi (GET yoki POST massividan) */
 function readFilters(array $src, string $statusKey): array
 {
     $status = (string) ($src[$statusKey] ?? '');
@@ -66,11 +58,11 @@ function readFilters(array $src, string $statusKey): array
 
     return [
         'status'  => $status,
-        // HEMIS ID faqat raqam: boshqa belgilar olib tashlanadi (eng ko'pi 20 ta)
+        // HEMIS ID faqat raqam (eng ko'pi 20 ta)
         'q'       => mb_substr((string) preg_replace('/\D+/', '', (string) ($src['q'] ?? '')), 0, 20),
         'faculty' => mb_substr(trim((string) ($src['faculty'] ?? '')), 0, 150),
         'group'   => mb_substr(trim((string) ($src['group'] ?? '')), 0, 30),
-        // Talaba kodi: harf + raqam, eng ko'pi 6 belgi, harflar katta qilinadi ("k7m 4p2" ham qabul qilinadi)
+        // Talaba kodi: harf + raqam, eng ko'pi 6 belgi, katta harflarda
         'code'    => normalizeReservationCode((string) ($src['code'] ?? '')),
     ];
 }
@@ -82,54 +74,125 @@ function adminUrl(array $filters): string
     return 'admin/index.php' . ($query ? '?' . http_build_query($query) : '');
 }
 
-/**
- * 🔑 GENERATSIYA KODI belgisi (sariq badge).
- * FIO va Email tagida HAR DOIM ko'rinadi:
- *  - kod bor bo'lsa: "🔑 Generatsiya kodi: K7M 4P2"
- *  - kod yo'q bo'lsa (offlayn berilgan yoki eski yozuv): "🔑 Kod yo'q" (kulrang izoh bilan)
- */
-function renderGenerationCode(?string $code, bool $isOffline): void
+/** Qiymat bor bo'lsa xavfsiz matn, bo'lmasa kulrang "—" */
+function dash(?string $value): string
 {
-    $code = trim((string) $code);
+    $value = trim((string) $value);
+    return $value !== '' ? e($value) : '<span class="text-slate-400">—</span>';
+}
 
-    if ($code !== '') {
-        ?>
-        <div class="mt-1.5 inline-flex flex-wrap items-center gap-x-1.5 px-2 py-1 rounded-md border
-                    bg-amber-100 text-amber-900 border-amber-300 text-[11px] leading-tight"
-             title="Talaba kodi">
-            <span class="font-semibold">Code:</span>
-            <span class="font-mono text-xs font-bold tracking-wider"><?= e(formatReservationCode($code)) ?></span>
-        </div>
-        <?php
-        return;
+/**
+ * Holat belgisi. Har doim BITTA qatorda (whitespace-nowrap).
+ * auto_rejected = 1 bo'lsa – "⏱️ Avto-rad etilgan" maxsus belgisi.
+ */
+function adminStatusBadge(array $r): string
+{
+    $base   = 'inline-block whitespace-nowrap text-xs px-2 py-0.5 rounded-full font-medium ';
+    $status = (string) $r['status'];
+
+    if ($status === 'rad_etildi' && (int) ($r['auto_rejected'] ?? 0) === 1) {
+        return '<span class="' . $base . 'bg-orange-100 text-orange-700 border border-orange-300">⏱️ Avto-rad etilgan</span>';
     }
 
-    // Kod yo'q: sabab ko'rsatiladi, shunda "kod yo'qolib qoldi" degan shubha tug'ilmaydi
+    return match ($status) {
+        'kutilmoqda'  => '<span class="' . $base . 'bg-amber-100 text-amber-700">Kutilmoqda</span>',
+        'tasdiqlandi' => '<span class="' . $base . 'bg-blue-100 text-blue-700">Tasdiqlandi</span>',
+        'berilgan'    => '<span class="' . $base . 'bg-green-100 text-green-700">Berilgan</span>',
+        'qaytarildi'  => '<span class="' . $base . 'bg-slate-200 text-slate-700">Qaytarildi</span>',
+        'rad_etildi'  => '<span class="' . $base . 'bg-red-100 text-red-700">Rad etildi</span>',
+        default       => '<span class="' . $base . 'bg-slate-100 text-slate-600">' . e($status) . '</span>',
+    };
+}
+
+/** Holatning matnli nomi (modal uchun) */
+function adminStatusLabel(array $r): string
+{
+    if ($r['status'] === 'rad_etildi' && (int) ($r['auto_rejected'] ?? 0) === 1) {
+        return '⏱️ Avto-rad etilgan';
+    }
+    return [
+        'kutilmoqda'  => 'Kutilmoqda',
+        'tasdiqlandi' => 'Tasdiqlandi',
+        'berilgan'    => 'Berilgan',
+        'qaytarildi'  => 'Qaytarildi',
+        'rad_etildi'  => 'Rad etildi',
+    ][(string) $r['status']] ?? (string) $r['status'];
+}
+
+/**
+ * Modal uchun ma'lumotlar paketi (JSON). Kitob nomi/rasmi tugmasiga
+ * data-order atributi sifatida qo'yiladi; JS uni o'qib modalni to'ldiradi.
+ */
+function orderPayload(array $r): string
+{
+    $style = categoryStyle((string) ($r['book_category'] ?? ''));
+
+    $data = [
+        'title'     => (string) $r['book_title'],
+        'author'    => (string) ($r['book_author'] ?? ''),
+        'genre'     => (string) ($r['book_genre'] ?? ''),
+        'cover'     => !empty($r['cover_image']) ? url((string) $r['cover_image']) : '',
+        'emoji'     => $style['emoji'],
+        'student'   => (string) $r['user_name'],
+        'hemis'     => (string) ($r['hemis_id'] ?? ''),
+        'faculty'   => (string) ($r['faculty'] ?? ''),
+        'group'     => (string) ($r['group_name'] ?? ''),
+        'code'      => !empty($r['pickup_code']) ? formatReservationCode((string) $r['pickup_code']) : '',
+        'status'    => adminStatusLabel($r),
+        'reserved'  => formatDateTime((string) $r['created_at']),
+        'picked'    => formatDateTime((string) ($r['picked_up_at'] ?? '')),
+        'returned'  => formatDateTime((string) ($r['returned_at'] ?? '')),
+        'staff'     => (string) ($r['staff_name'] ?? ''),
+        'offline'   => (int) ($r['is_offline'] ?? 0) === 1,
+        'auto'      => $r['status'] === 'rad_etildi' && (int) ($r['auto_rejected'] ?? 0) === 1,
+        'deadline'  => formatDateTime((string) ($r['pickup_deadline'] ?? '')),
+    ];
+
+    return e(json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP));
+}
+
+/** Ixcham muqova (w-9 h-12): rasm bo'lsa rasm, bo'lmasa kategoriya belgisi */
+function renderMiniCover(array $r): void
+{
+    $style = categoryStyle((string) ($r['book_category'] ?? ''));
+
+    if (!empty($r['cover_image'])): ?>
+        <img src="<?= e(url((string) $r['cover_image'])) ?>" alt=""
+             class="w-9 h-12 flex-shrink-0 rounded object-cover shadow-sm">
+    <?php else: ?>
+        <span class="w-9 h-12 flex-shrink-0 rounded shadow-sm flex items-center justify-center text-lg <?= e($style['bg']) ?>"><?= $style['emoji'] ?></span>
+    <?php endif;
+}
+
+/**
+ * "Kitob" ustuni: muqova + nomi. Ikkalasi ham bitta tugma – bosilganda modal ochiladi.
+ */
+function renderBookButton(array $r): void
+{
     ?>
-    <div class="mt-1.5 inline-flex items-center gap-1.5 px-2 py-1 rounded-md border
-                bg-slate-50 text-slate-500 border-slate-200 text-[11px] leading-tight">
-        <span>Kod yo'q</span>
-        <span class="text-slate-400">(<?= $isOffline ? 'offlayn berilgan' : 'eski yozuv' ?>)</span>
-    </div>  
+    <button type="button" data-order-open data-order="<?= orderPayload($r) ?>"
+            class="flex items-center gap-2 text-left w-full group">
+        <?php renderMiniCover($r); ?>
+        <span class="min-w-0 font-semibold text-blue-600 group-hover:underline break-words leading-snug"><?= e($r['book_title']) ?></span>
+    </button>
     <?php
 }
 
 /**
- * Holatga qarab amal tugmalarini chizadi.
- * $compact = true bo'lsa (telefon kartochkasi) tugmalar yonma-yon, keng va katta bo'ladi.
- * $compact = false bo'lsa (jadval) tor ustunga sig'ishi uchun tugmalar ustma-ust turadi.
- * Formalar filtrlarni yashirin maydonlarda olib yuradi, shunda amaldan keyin
- * kutubxonachi o'sha qidiruv natijasida qoladi.
+ * Holatga qarab amal tugmalari.
+ * Kompyuter jadvalida tugmalar ustma-ust (tor ustun), telefonda yonma-yon.
  */
 function renderActions(array $r, array $filters, bool $compact): void
 {
     $status = (string) $r['status'];
-    if ($status !== 'kutilmoqda' && $status !== 'tasdiqlandi' && $status !== 'berilgan') {
+    if ($status !== 'kutilmoqda' && $status !== 'tasdiqlandi') {
         echo '<span class="text-xs text-slate-400">—</span>';
         return;
     }
 
-    // Tugmalar ro'yxati: [amal, yozuv, rang, tasdiq matni]
+    $size = $compact ? 'w-full text-sm py-2' : 'w-full text-xs px-2.5 py-1.5 whitespace-nowrap';
+
+    // [amal, yozuv, rang, tasdiq matni]
     $buttons = $status === 'kutilmoqda'
         ? [
             ['approve', 'Tasdiqlash', 'bg-green-600 hover:bg-green-700', null],
@@ -140,15 +203,9 @@ function renderActions(array $r, array $filters, bool $compact): void
             ['return', 'Qaytarildi', 'bg-blue-600 hover:bg-blue-700', null],
         ];
 
-    $size = $compact ? 'w-full text-sm py-2' : 'w-full text-xs px-2 py-1.5';
-
-    // Telefonda: yonma-yon (grid); jadvalda: ustma-ust (flex-col)
-    echo '<div class="' . ($compact
-        ? 'grid grid-cols-' . count($buttons) . ' gap-2'
-        : 'flex flex-col gap-1.5 w-full') . '">';
+    echo '<div class="' . ($compact ? 'grid grid-cols-' . count($buttons) . ' gap-2' : 'flex flex-col gap-1.5') . '">';
 
     foreach ($buttons as [$action, $label, $color, $confirmText]) {
-        // Tasdiq oynasi matni JS satriga xavfsiz joylanadi (json_encode + e)
         $onsubmit = $confirmText !== null
             ? ' onsubmit="' . e('return confirm(' . json_encode($confirmText, JSON_UNESCAPED_UNICODE) . ');') . '"'
             : '';
@@ -172,10 +229,7 @@ function renderActions(array $r, array $filters, bool $compact): void
     echo '</div>';
 }
 
-/**
- * Qolgan vaqt belgisi (taymer). Sahifa ochilganda server hisoblagan matn turadi,
- * keyin pastdagi JavaScript uni har soniyada yangilaydi (data-deadline-ts bo'yicha).
- */
+/** Qolgan vaqt belgisi (taymer). Matnni pastdagi JS har soniyada yangilaydi. */
 function renderTimer(array $r): void
 {
     if ($r['status'] !== 'kutilmoqda' || empty($r['pickup_deadline'])) {
@@ -195,11 +249,10 @@ function renderTimer(array $r): void
 }
 
 // ------------------------------------------------------------
-// 1. AMALLARNI BAJARISH (POST)
+// 1. AMALLARNI BAJARISH (POST)  – mantiq o'zgarmagan
 // ------------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    // Amaldan keyin foydalanuvchi o'sha filtr va qidiruvda qoladi
     $backUrl = adminUrl(readFilters($_POST, 'status_filter'));
 
     if (!csrfVerify($_POST['csrf_token'] ?? null)) {
@@ -219,22 +272,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt    = null;
         $message = '';
 
-        // Joriy vaqt PHP'dan olinadi (Asia/Tashkent, functions.php da o'rnatilgan).
-        $now = date('Y-m-d H:i:s');
-
-        // Xizmat ko'rsatayotgan xodim: hozir tizimda turgan kutubxonachi.
-        // (requireAdmin() sahifa boshida tekshirgani uchun bu yerda albatta admin.)
+        $now     = date('Y-m-d H:i:s');
         $staffId = (int) ($_SESSION['user_id'] ?? 0);
 
-        // available_copies ni to'g'ri boshqarish uchun
-        // band qilishning kitob ID sini oldindan olamiz.
+        // Kitob ID si (available_copies ni to'g'ri boshqarish uchun)
         $stmtBook = $pdo->prepare('SELECT book_id FROM reservations WHERE id = :id');
         $stmtBook->execute([':id' => $id]);
         $resBookId = (int) ($stmtBook->fetchColumn() ?: 0);
 
         if ($action === 'approve') {
-            // Tasdiqlash: kitob talabaga berildi – olib ketilgan vaqt va
-            // xizmat ko'rsatgan xodim (served_by) yoziladi
             $stmt = $pdo->prepare(
                 "UPDATE reservations
                  SET status = 'tasdiqlandi', picked_up_at = :now, served_by = :staff_id
@@ -248,13 +294,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $message = 'Band qilish tasdiqlandi. Kitob berilgan vaqt va mas\'ul xodim saqlandi.';
 
         } elseif ($action === 'return') {
-            // Qaytarildi: qaytarilgan vaqt yoziladi
             $stmt = $pdo->prepare(
                 "UPDATE reservations
                  SET status = 'qaytarildi', returned_at = :now, returned_by = :staff_id
                  WHERE id = :id AND status IN ('tasdiqlandi', 'berilgan')"
             );
-            // «Qaytarildi» deb belgilagan xodim tasdiqlagan xodimdan boshqa bo'lishi mumkin
             $stmt->execute([
                 ':now'      => $now,
                 ':staff_id' => $staffId > 0 ? $staffId : null,
@@ -262,14 +306,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             $message = "Kitob qaytarildi deb belgilandi. Nusxa yana bo'sh.";
 
-            // REAL-TIME: haqiqatan qaytgan nusxa bo'shlar soniga qo'shiladi
             if ($stmt->rowCount() > 0 && $resBookId > 0) {
                 incrementAvailableCopies($pdo, $resBookId);
             }
 
         } elseif ($action === 'reject') {
-            // O'chirmaymiz, holatini "rad_etildi" qilamiz – talaba ham, kutubxonachi ham ko'radi
-            // Rad etgan xodim (rejected_by) ham saqlanadi
+            // Qo'lda rad etish: rejected_by yoziladi (shu sababli avto-rad etish emas)
             $stmt = $pdo->prepare(
                 "UPDATE reservations
                  SET status = 'rad_etildi', rejected_by = :staff_id
@@ -281,7 +323,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             $message = 'Band qilish rad etildi.';
 
-            // REAL-TIME: rad etilgan band bo'sh nusxani qaytaradi
             if ($stmt->rowCount() > 0 && $resBookId > 0) {
                 incrementAvailableCopies($pdo, $resBookId);
             }
@@ -311,11 +352,10 @@ $filters = readFilters($_GET, 'status');
 
 $stats        = ['books' => 0, 'pending' => 0, 'approved' => 0, 'students' => 0];
 $reservations = [];
-$faculties    = [];   // fakultet dropdown uchun
-$groups       = [];   // guruh dropdown uchun
+$faculties    = [];
+$groups       = [];
 
 try {
-    // Umumiy ko'rsatkichlar (bitta so'rovda)
     $stats = $pdo->query(
         "SELECT
             (SELECT COUNT(*) FROM books) AS books,
@@ -324,7 +364,6 @@ try {
             (SELECT COUNT(*) FROM users WHERE role = 'talaba') AS students"
     )->fetch();
 
-    // Dropdown ro'yxatlari: bazada mavjud fakultet va guruhlar
     $faculties = $pdo->query(
         "SELECT DISTINCT faculty FROM users
          WHERE role = 'talaba' AND faculty IS NOT NULL AND faculty <> '' ORDER BY faculty"
@@ -335,26 +374,32 @@ try {
          WHERE role = 'talaba' AND group_name IS NOT NULL AND group_name <> '' ORDER BY group_name"
     )->fetchAll(PDO::FETCH_COLUMN);
 
-    // Band qilishlar ro'yxati (hamma shart prepared statement orqali).
-    // b.category – "Kitob" ustunida kategoriyani ko'rsatish uchun qo'shildi.
-    // LEFT JOIN ishlatilgani uchun xodim biriktirilmagan so'rovlar ham tushib qolmaydi.
-    $sql = 'SELECT r.id, r.reserved_date, r.created_at, r.pickup_days, r.pickup_deadline, r.status,
-                   r.picked_up_at, r.due_date, r.returned_at, r.is_offline,
-                   r.served_by, r.returned_by, r.rejected_by,
-                   r.pickup_code,
+    // reservations.auto_rejected ustuni bormi? Yo'q bo'lsa – zaxira hisob:
+    // rad etilgan va rad etgan xodimi yo'q yozuv = avto-rad etilgan.
+    $hasAutoCol = (int) $pdo->query(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME   = 'reservations'
+            AND COLUMN_NAME  = 'auto_rejected'"
+    )->fetchColumn() > 0;
+
+    $autoExpr = $hasAutoCol
+        ? 'r.auto_rejected'
+        : "(r.status = 'rad_etildi' AND r.rejected_by IS NULL)";
+
+    $sql = "SELECT r.id, r.reserved_date, r.created_at, r.pickup_days, r.pickup_deadline, r.status,
+                   r.picked_up_at, r.returned_at, r.is_offline, r.served_by, r.returned_by, r.rejected_by,
+                   r.pickup_code, {$autoExpr} AS auto_rejected,
                    u.name AS user_name, u.email AS user_email,
                    u.faculty, u.direction, u.group_name, u.hemis_id,
-                   b.id AS book_id, b.title AS book_title, b.category AS book_category,
-                   staff.name    AS staff_name,
-                   returner.name AS returner_name,
-                   rejecter.name AS rejecter_name
+                   b.id AS book_id, b.title AS book_title, b.author AS book_author,
+                   b.genre AS book_genre, b.category AS book_category, b.cover_image,
+                   staff.name AS staff_name
             FROM reservations r
             JOIN users u ON u.id = r.user_id
             JOIN books b ON b.id = r.book_id
-            LEFT JOIN users staff    ON r.served_by   = staff.id
-            LEFT JOIN users returner ON r.returned_by = returner.id
-            LEFT JOIN users rejecter ON r.rejected_by = rejecter.id
-            WHERE 1 = 1';
+            LEFT JOIN users staff ON r.served_by = staff.id
+            WHERE 1 = 1";
     $params = [];
 
     if ($filters['status'] !== '') {
@@ -362,7 +407,6 @@ try {
         $params[':status'] = $filters['status'];
     }
     if ($filters['q'] !== '') {
-        // HEMIS ID bo'yicha qisman qidiruv (faqat raqamlar, shuning uchun LIKE belgilari xavfsiz)
         $sql .= ' AND u.hemis_id LIKE :hemis';
         $params[':hemis'] = '%' . $filters['q'] . '%';
     }
@@ -375,15 +419,11 @@ try {
         $params[':group_name'] = $filters['group'];
     }
     if ($filters['code'] !== '') {
-        // Talaba kodi bo'yicha qidiruv: 6 belgi yozilsa aniq moslik, kamroq bo'lsa – boshlanishi bo'yicha.
-        // Kod faqat harf va raqamdan iborat (normalizeReservationCode tozalagan), shuning uchun LIKE xavfsiz.
         $sql .= ' AND r.pickup_code LIKE :pickup_code';
         $params[':pickup_code'] = $filters['code'] . '%';
     }
 
-    // Tartib:
-    //  1) kutilayotganlar tepada, ular ichida muddati eng oz qolgani birinchi (pickup_deadline ASC)
-    //  2) qolganlari (tasdiqlangan, qaytarilgan, rad etilgan) – eng yangisi birinchi
+    // Kutilayotganlar tepada (muddati eng oz qolgani birinchi), qolganlari – yangisi birinchi
     $sql .= " ORDER BY CASE WHEN r.status = 'kutilmoqda' THEN 1 ELSE 2 END,
                        CASE WHEN r.status = 'kutilmoqda' THEN r.pickup_deadline END ASC,
                        r.created_at DESC, r.id DESC";
@@ -396,7 +436,6 @@ try {
     setFlash('error', "Ma'lumotlarni yuklashda xatolik yuz berdi. (008-migratsiya ishga tushirilganmi?)");
 }
 
-// Holat tugmalari (boshqa filtrlar saqlanadi)
 $tabs = [
     ''            => 'Hammasi',
     'kutilmoqda'  => 'Kutilmoqda',
@@ -405,7 +444,6 @@ $tabs = [
     'rad_etildi'  => 'Rad etilgan',
 ];
 
-// Qidiruv yoki dropdown filtr yoqilganmi? ("Tozalash" tugmasi uchun)
 $hasSearch = $filters['q'] !== '' || $filters['faculty'] !== '' || $filters['group'] !== '' || $filters['code'] !== '';
 
 $inputClass = 'w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-300';
@@ -439,12 +477,10 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 </div>
 
-<!-- ====== TALABA KODI BO'YICHA TEZKOR QIDIRUV ======
-     Talaba kutubxonada 6 belgili kodni (harf + raqam) aytadi – kutubxonachi shu yerga yozadi.
-     6-belgi kiritilishi bilan forma o'zi yuboriladi (pastdagi JS). -->
+<!-- ====== TALABA KODI BO'YICHA TEZKOR QIDIRUV ====== -->
 <form method="get" action="<?= e(url('admin/index.php')) ?>" id="codeSearchForm"
       class="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3 flex flex-col sm:flex-row sm:items-center gap-2">
-    <label for="codeInput" class="text-sm font-semibold text-amber-900 shrink-0">Talaba kodi:</label>
+    <label for="codeInput" class="text-sm font-semibold text-amber-900 shrink-0">🔑 Talaba kodi:</label>
 
     <input type="text" id="codeInput" name="code" value="<?= e($filters['code']) ?>"
            maxlength="7" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false"
@@ -469,7 +505,6 @@ require_once __DIR__ . '/../includes/header.php';
 <form method="get" action="<?= e(url('admin/index.php')) ?>"
       class="bg-white border border-slate-200 rounded-xl p-3 mb-3 grid grid-cols-1 md:grid-cols-[1.2fr_1fr_1fr_auto_auto] gap-2">
 
-    <!-- Holat va kod tanlangan bo'lsa, qidirganda ham saqlanib qoladi -->
     <input type="hidden" name="status" value="<?= e($filters['status']) ?>">
     <input type="hidden" name="code" value="<?= e($filters['code']) ?>">
 
@@ -524,110 +559,83 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 <?php else: ?>
 
-    <!-- ====== KOMPYUTER (1024px dan keng): IXCHAM 8 USTUNLI JADVAL ======
-         table-fixed + foizli kengliklar (jami 100%) + break-words = gorizontal scroll yo'q.
-         Ma'lumotlar har bir katakcha ichida ustma-ust (multi-line) joylashadi. -->
+    <!-- Kompyuter (1024px dan keng): 8 ustunli ixcham jadval.
+         overflow-x-auto YO'Q – jadval konteyner kengligiga 100% moslashadi. -->
     <div class="hidden lg:block bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <table class="w-full table-fixed text-xs text-left">
-            <colgroup>
-                <col style="width: 19%"> <!-- 1. Talaba FIO -->
-                <col style="width: 9%">  <!-- 2. HEMIS ID -->
-                <col style="width: 13%"> <!-- 3. Fakultet va guruh -->
-                <col style="width: 14%"> <!-- 4. Kitob -->
-                <col style="width: 13%"> <!-- 5. Band qilingan / qolgan muddat -->
-                <col style="width: 15%"> <!-- 6. Berilgan / qaytarilgan / xodim -->
-                <col style="width: 8%">  <!-- 7. Holati -->
-                <col style="width: 9%">  <!-- 8. Harakatlar -->
-            </colgroup>
+        <table class="w-full text-xs text-left">
             <thead class="bg-slate-50 text-slate-600">
                 <tr>
                     <th class="px-2.5 py-3 font-semibold">Talaba FIO</th>
-                    <th class="px-2.5 py-3 font-semibold">HEMIS ID</th>
+                    <th class="px-2.5 py-3 font-semibold whitespace-nowrap">HEMIS ID</th>
                     <th class="px-2.5 py-3 font-semibold">Fakultet va guruh</th>
                     <th class="px-2.5 py-3 font-semibold">Kitob</th>
-                    <th class="px-2.5 py-3 font-semibold">Band qilingan / Qolgan muddat</th>
-                    <th class="px-2.5 py-3 font-semibold">Berilgan / Qaytarilgan / Xodim</th>
-                    <th class="px-2.5 py-3 font-semibold">Holati</th>
-                    <th class="px-2.5 py-3 font-semibold">Harakatlar</th>
+                    <th class="px-2.5 py-3 font-semibold">Band qilingan / Qolgan vaqt</th>
+                    <th class="px-2.5 py-3 font-semibold">Berilgan / Xodim</th>
+                    <th class="px-2.5 py-3 font-semibold whitespace-nowrap">Holati</th>
+                    <th class="px-2.5 py-3 font-semibold text-right">Harakatlar</th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($reservations as $r): ?>
                     <tr class="border-t border-slate-200 align-top">
 
-                        <!-- 1. FIO (qora, bold) + Email (kulrang) + 🔑 Generatsiya kodi (sariq badge) -->
-                        <td class="px-2.5 py-3">
-                            <div class="font-bold text-slate-900 text-[13px] leading-snug break-words"><?= e($r['user_name']) ?></div>
+                        <!-- 1) FIO (bold) + Email + 🔑 sariq kod badge -->
+                        <td class="px-2.5 py-3 min-w-0">
+                            <div class="font-bold text-sm break-words"><?= e($r['user_name']) ?></div>
                             <div class="text-slate-500 break-all"><?= e($r['user_email']) ?></div>
-                            <?php renderGenerationCode($r['pickup_code'] ?? null, (int) $r['is_offline'] === 1); ?>
+                            <?php renderCodeBadge($r['pickup_code'] ?? null, (string) $r['status']); ?>
                         </td>
 
-                        <!-- 2. HEMIS ID: sof raqamli -->
-                        <td class="px-2.5 py-3 font-mono break-all">
-                            <?= !empty($r['hemis_id']) ? e($r['hemis_id']) : '<span class="text-slate-400">—</span>' ?>
+                        <!-- 2) HEMIS ID – bitta qatorda -->
+                        <td class="px-2.5 py-3 whitespace-nowrap font-mono">
+                            <?= dash($r['hemis_id'] ?? null) ?>
                         </td>
 
-                        <!-- 3. Fakultet nomi + guruh badge -->
+                        <!-- 3) Fakultet + guruh badge -->
                         <td class="px-2.5 py-3">
-                            <div class="break-words leading-snug">
-                                <?= !empty($r['faculty']) ? e($r['faculty']) : '<span class="text-slate-400">—</span>' ?>
-                            </div>
+                            <div class="break-words"><?= dash($r['faculty'] ?? null) ?></div>
                             <?php if (!empty($r['group_name'])): ?>
-                                <span class="inline-block mt-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium break-all">
-                                    <?= e($r['group_name']) ?>
-                                </span>
+                                <span class="inline-block mt-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium"><?= e($r['group_name']) ?></span>
                             <?php endif; ?>
                         </td>
 
-                        <!-- 4. Kitob nomi (havola) + kategoriya -->
+                        <!-- 4) Kitob: ixcham rasm + nomi (bosilganda modal) -->
                         <td class="px-2.5 py-3">
-                            <a href="<?= e(url('book.php?id=' . (int) $r['book_id'])) ?>"
-                               class="text-blue-600 hover:underline font-semibold break-words leading-snug"><?= e($r['book_title']) ?></a>
-                            <div>
-                                <span class="inline-block mt-1 px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                                    <?= e($r['book_category']) ?>
-                                </span>
-                            </div>
+                            <?php renderBookButton($r); ?>
                         </td>
 
-                        <!-- 5. Band qilingan sana/vaqt + qolgan vaqt taymeri -->
+                        <!-- 5) Band vaqti + real-time taymer -->
                         <td class="px-2.5 py-3">
-                            <div class="font-bold"><?= e(formatDateTime((string) $r['created_at'])) ?></div>
+                            <div class="font-bold whitespace-nowrap"><?= e(formatDateTime((string) $r['created_at'])) ?></div>
                             <?php if (!empty($r['pickup_deadline'])): ?>
-                                <div class="text-slate-600 mt-0.5">
-                                    <?= (int) $r['pickup_days'] ?> kun · <?= e(formatDateTime((string) $r['pickup_deadline'])) ?> gacha
-                                </div>
+                                <div class="text-slate-600 mt-0.5"><?= (int) $r['pickup_days'] ?> kun · <?= e(formatDateTime((string) $r['pickup_deadline'])) ?> gacha</div>
                             <?php endif; ?>
                             <?php renderTimer($r); ?>
                         </td>
 
-                        <!-- 6. Berilgan sana/vaqt (+ qaytarilgan) + tasdiqlagan xodim ismi -->
+                        <!-- 6) Olib ketilgan sana + xodim ismi -->
                         <td class="px-2.5 py-3">
                             <?php if (!empty($r['picked_up_at'])): ?>
-                                <div class="text-green-700">Berilgan: <b><?= e(formatDateTime((string) $r['picked_up_at'])) ?></b></div>
+                                <div class="text-green-700 whitespace-nowrap"><b><?= e(formatDateTime((string) $r['picked_up_at'])) ?></b></div>
+                            <?php else: ?>
+                                <span class="text-slate-400">—</span>
                             <?php endif; ?>
-                            <?php if (!empty($r['returned_at'])): ?>
-                                <div class="text-slate-700 mt-0.5">Qaytarilgan: <b><?= e(formatDateTime((string) $r['returned_at'])) ?></b></div>
+                            <?php if (!empty($r['staff_name'])): ?>
+                                <div class="text-slate-700 mt-0.5 break-words"><?= e($r['staff_name']) ?></div>
                             <?php endif; ?>
                             <?php if ((int) $r['is_offline'] === 1): ?>
                                 <span class="inline-block mt-1 px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-medium">Offlayn</span>
                             <?php endif; ?>
-                            <?php if (empty($r['picked_up_at']) && empty($r['returned_at']) && (int) $r['is_offline'] !== 1): ?>
-                                <div class="text-slate-400">—</div>
-                            <?php endif; ?>
-
-                            <!-- Xodimlar izi: tasdiqlagan / qaytarilgan deb belgilagan / rad etgan xodim ismi -->
-                            <?php renderStaffTrail($r); ?>
                         </td>
 
-                        <!-- 7. Holati -->
-                        <td class="px-2.5 py-3">
-                            <?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? ''), (string) ($r['due_date'] ?? '')) ?>
+                        <!-- 7) Holati – bitta qatorda -->
+                        <td class="px-2.5 py-3 whitespace-nowrap">
+                            <?= adminStatusBadge($r) ?>
                         </td>
 
-                        <!-- 8. Harakatlar (tor ustunda ustma-ust) -->
+                        <!-- 8) Harakatlar -->
                         <td class="px-2.5 py-3">
-                            <?php renderActions($r, $filters, false); ?>
+                            <div class="flex justify-end"><?php renderActions($r, $filters, false); ?></div>
                         </td>
                     </tr>
                 <?php endforeach; ?>
@@ -635,39 +643,35 @@ require_once __DIR__ . '/../includes/header.php';
         </table>
     </div>
 
-    <!-- ====== TELEFON VA PLANSHET (1024px dan tor): har bir band qilish alohida kartochka ====== -->
+    <!-- Telefon va planshet (1024px dan tor): kartochkalar -->
     <div class="lg:hidden space-y-3">
         <?php foreach ($reservations as $r): ?>
             <div class="bg-white border border-slate-200 rounded-xl p-4">
                 <div class="flex items-start justify-between gap-2">
                     <div class="min-w-0">
-                        <div class="font-bold text-slate-900 break-words"><?= e($r['user_name']) ?></div>
+                        <div class="font-bold break-words"><?= e($r['user_name']) ?></div>
                         <div class="text-xs text-slate-500 break-all"><?= e($r['user_email']) ?></div>
-                        <?php renderGenerationCode($r['pickup_code'] ?? null, (int) $r['is_offline'] === 1); ?>
+                        <?php renderCodeBadge($r['pickup_code'] ?? null, (string) $r['status']); ?>
                     </div>
-                    <div class="shrink-0"><?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? ''), (string) ($r['due_date'] ?? '')) ?></div>
+                    <div class="shrink-0"><?= adminStatusBadge($r) ?></div>
                 </div>
 
                 <dl class="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                     <div>
                         <dt class="text-slate-500">HEMIS ID</dt>
-                        <dd class="font-mono font-semibold"><?= !empty($r['hemis_id']) ? e($r['hemis_id']) : '—' ?></dd>
+                        <dd class="font-mono font-semibold whitespace-nowrap"><?= dash($r['hemis_id'] ?? null) ?></dd>
                     </div>
                     <div>
                         <dt class="text-slate-500">Guruh</dt>
-                        <dd class="font-semibold"><?= !empty($r['group_name']) ? e($r['group_name']) : '—' ?></dd>
+                        <dd class="font-semibold"><?= dash($r['group_name'] ?? null) ?></dd>
                     </div>
                     <div class="col-span-2">
                         <dt class="text-slate-500">Fakultet</dt>
-                        <dd class="font-semibold break-words"><?= !empty($r['faculty']) ? e($r['faculty']) : '—' ?></dd>
+                        <dd class="font-semibold break-words"><?= dash($r['faculty'] ?? null) ?></dd>
                     </div>
                     <div class="col-span-2">
-                        <dt class="text-slate-500">Kitob</dt>
-                        <dd>
-                            <a href="<?= e(url('book.php?id=' . (int) $r['book_id'])) ?>"
-                               class="font-semibold text-sm text-blue-600 hover:underline break-words"><?= e($r['book_title']) ?></a>
-                            <span class="ml-1 px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600"><?= e($r['book_category']) ?></span>
-                        </dd>
+                        <dt class="text-slate-500 mb-1">Kitob</dt>
+                        <dd><?php renderBookButton($r); ?></dd>
                     </div>
                     <div class="col-span-2">
                         <dt class="text-slate-500">Band qilingan</dt>
@@ -680,15 +684,15 @@ require_once __DIR__ . '/../includes/header.php';
                         </dd>
                     </div>
                     <?php if (!empty($r['picked_up_at'])): ?>
-                        <div class="text-green-700">
+                        <div>
                             <dt class="text-slate-500">Berilgan</dt>
-                            <dd class="font-semibold"><?= e(formatDateTime((string) $r['picked_up_at'])) ?></dd>
+                            <dd class="font-semibold text-green-700"><?= e(formatDateTime((string) $r['picked_up_at'])) ?></dd>
                         </div>
                     <?php endif; ?>
-                    <?php if (!empty($r['returned_at'])): ?>
+                    <?php if (!empty($r['staff_name'])): ?>
                         <div>
-                            <dt class="text-slate-500">Qaytarilgan</dt>
-                            <dd class="font-semibold"><?= e(formatDateTime((string) $r['returned_at'])) ?></dd>
+                            <dt class="text-slate-500">Xodim</dt>
+                            <dd class="font-semibold break-words"><?= e($r['staff_name']) ?></dd>
                         </div>
                     <?php endif; ?>
                     <?php if ((int) $r['is_offline'] === 1): ?>
@@ -696,14 +700,9 @@ require_once __DIR__ . '/../includes/header.php';
                             <span class="inline-block px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-medium">Offlayn berilgan</span>
                         </div>
                     <?php endif; ?>
-
-                    <!-- Xodimlar izi: tasdiqlagan / qaytarilgan deb belgilagan / rad etgan -->
-                    <div class="col-span-2">
-                        <?php renderStaffTrail($r); ?>
-                    </div>
                 </dl>
 
-                <?php if (in_array($r['status'], ['kutilmoqda', 'tasdiqlandi', 'berilgan'], true)): ?>
+                <?php if ($r['status'] === 'kutilmoqda' || $r['status'] === 'tasdiqlandi'): ?>
                     <div class="mt-3"><?php renderActions($r, $filters, true); ?></div>
                 <?php endif; ?>
             </div>
@@ -711,10 +710,65 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 <?php endif; ?>
 
-<!-- ====== JONLI TAYMER ======
-     Har soniyada kutilayotgan band qilishlarning qolgan vaqtini yangilaydi.
-     Server vaqti bilan sinxronlanadi, shuning uchun kompyuter soati noto'g'ri bo'lsa ham to'g'ri ishlaydi.
-     Matn faqat textContent orqali qo'yiladi (XSS bo'lmaydi). -->
+<!-- ====== BUYURTMA TAFSILOTLARI MODALI ======
+     Ichini pastdagi JS to'ldiradi (faqat textContent – XSS bo'lmaydi). -->
+<div id="orderModal" role="dialog" aria-modal="true" aria-labelledby="orderModalTitle" inert
+     class="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/50
+            opacity-0 pointer-events-none transition-opacity duration-200">
+    <div class="relative w-full max-w-md max-h-[90vh] overflow-y-auto bg-white rounded-xl shadow-2xl">
+
+        <button type="button" id="orderModalClose" aria-label="Oynani yopish"
+                class="absolute top-2 right-2 z-10 rounded-full bg-white/90 hover:bg-white shadow w-9 h-9 text-lg text-slate-600">✕</button>
+
+        <!-- Katta muqova -->
+        <div id="omCoverBox" class="h-52 flex items-center justify-center text-7xl bg-slate-100">
+            <img id="omCover" src="" alt="" class="hidden h-full w-full object-contain">
+            <span id="omEmoji"></span>
+        </div>
+
+        <div class="p-5 space-y-4">
+            <!-- Kitob -->
+            <div>
+                <h2 id="orderModalTitle" class="text-xl font-bold leading-snug break-words"></h2>
+                <p class="text-sm text-slate-600 mt-1 break-words"><b>Muallif:</b> <span id="omAuthor"></span></p>
+                <p class="text-sm text-slate-600"><b>Janr:</b> <span id="omGenre"></span></p>
+            </div>
+
+            <!-- Avto-rad etilgan ogohlantirishi -->
+            <div id="omAuto" class="hidden border border-orange-300 bg-orange-50 text-orange-800 rounded-md px-3 py-2 text-sm">
+                ⏱️ Bu band qilish olib ketish muddati o'tgani uchun <b>avtomatik rad etilgan</b>.
+                Kitob nusxasi boshqa talabalar uchun bo'shatilgan.
+            </div>
+
+            <!-- Talaba -->
+            <div class="border border-slate-200 rounded-lg p-3">
+                <div class="text-xs uppercase tracking-wide text-slate-500 mb-1">Talaba</div>
+                <div id="omStudent" class="font-bold break-words"></div>
+                <dl class="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                    <div><dt class="text-slate-500">HEMIS ID</dt><dd id="omHemis" class="font-mono font-semibold whitespace-nowrap"></dd></div>
+                    <div><dt class="text-slate-500">Guruh</dt><dd id="omGroup" class="font-semibold"></dd></div>
+                    <div class="col-span-2"><dt class="text-slate-500">Fakultet</dt><dd id="omFaculty" class="font-semibold break-words"></dd></div>
+                </dl>
+                <div id="omCodeWrap" class="mt-2">
+                    <span class="inline-block px-1.5 py-0.5 rounded border border-amber-300 bg-amber-100 text-amber-800 font-mono text-xs font-bold tracking-wider">
+                        🔑 <span id="omCode"></span>
+                    </span>
+                </div>
+            </div>
+
+            <!-- Sanalar va xodim -->
+            <dl class="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                <div class="col-span-2"><dt class="text-slate-500">Holati</dt><dd id="omStatus" class="font-semibold"></dd></div>
+                <div><dt class="text-slate-500">Band qilingan</dt><dd id="omReserved" class="font-semibold"></dd></div>
+                <div><dt class="text-slate-500">Olib ketilgan</dt><dd id="omPicked" class="font-semibold"></dd></div>
+                <div><dt class="text-slate-500">Qaytarilgan</dt><dd id="omReturned" class="font-semibold"></dd></div>
+                <div><dt class="text-slate-500">Mas'ul xodim</dt><dd id="omStaff" class="font-semibold break-words"></dd></div>
+            </dl>
+        </div>
+    </div>
+</div>
+
+<!-- ====== JONLI TAYMER ====== -->
 <script>
 (function () {
     'use strict';
@@ -748,10 +802,9 @@ require_once __DIR__ . '/../includes/header.php';
             var m = Math.floor((left % 3600) / 60);
             var s = left % 60;
 
-            var text = (d > 0 ? d + ' kun ' : '') + two(h) + ':' + two(m) + ':' + two(s) + ' qoldi';
+            var text   = (d > 0 ? d + ' kun ' : '') + two(h) + ':' + two(m) + ':' + two(s) + ' qoldi';
+            var urgent = left <= 6 * 3600;   // oxirgi 6 soatda qizil
 
-            // Oxirgi 6 soatda qizil rangga o'tadi
-            var urgent = left <= 6 * 3600;
             node.className = urgent ? URGENT : NORMAL;
             node.textContent = (urgent ? '⚠️ ' : '⏳ ') + text;
         });
@@ -762,10 +815,7 @@ require_once __DIR__ . '/../includes/header.php';
 })();
 </script>
 
-<!-- ====== KOD MAYDONI (Vanilla JS) ======
-     - faqat harf va raqamni qoldiradi, harflarni KATTA qiladi (bo'shliq va tirelar o'chiriladi; "k7m 4p2" ham ishlaydi)
-     - 6-belgi yozilishi bilan formani o'zi yuboradi, kutubxonachi "Topish" bosishi shart emas
-     - katta ekranda sahifa ochilganda kursor shu maydonda turadi (tezroq ishlash uchun) -->
+<!-- ====== TALABA KODI MAYDONI ====== -->
 <script>
 (function () {
     'use strict';
@@ -775,18 +825,158 @@ require_once __DIR__ . '/../includes/header.php';
     if (!form || !input) { return; }
 
     input.addEventListener('input', function () {
-        // Faqat lotin harf va raqamlar, katta harfda, eng ko'pi 6 ta
         var cleaned = input.value.replace(/[^A-Za-z0-9]+/g, '').toUpperCase().slice(0, 6);
         if (cleaned !== input.value) { input.value = cleaned; }
-
-        // 6 belgili kod to'liq kiritildi – qidiramiz
-        if (cleaned.length === 6) { form.submit(); }
+        if (cleaned.length === 6) { form.submit(); }   // 6 belgi – avtomatik qidiradi
     });
 
-    // Sahifa kod qidirilmagan holatda ochilsa, kursor shu maydonda turadi
     if (input.value === '' && window.matchMedia('(min-width: 1024px)').matches) {
         input.focus({ preventScroll: true });
     }
+})();
+</script>
+
+<!-- ====== BUYURTMA MODALI (Vanilla JS) ======
+     Kitob nomi yoki rasmi ([data-order-open]) bosilganda ochiladi.
+     Esc, orqa fonga bosish yoki ✕ yopadi; Tab oyna ichida aylanadi.
+     Hamma matn textContent orqali qo'yiladi (innerHTML ishlatilmaydi). -->
+<script>
+(function () {
+    'use strict';
+
+    var modal    = document.getElementById('orderModal');
+    var closeBtn = document.getElementById('orderModalClose');
+    if (!modal || !closeBtn) { return; }
+
+    var lastFocus = null;
+    var FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
+    var BG = ['bg-slate-100', 'bg-blue-100', 'bg-pink-100', 'bg-green-100', 'bg-slate-200'];
+
+    function $(id) { return document.getElementById(id); }
+
+    /** Matnni qo'yadi; bo'sh bo'lsa "—" */
+    function setText(id, value) {
+        $(id).textContent = (value !== undefined && value !== null && value !== '') ? value : '—';
+    }
+
+    /** Modalni buyurtma ma'lumotlari bilan to'ldiradi */
+    function fill(d) {
+        $('orderModalTitle').textContent = d.title || '';
+        setText('omAuthor', d.author);
+        setText('omGenre', d.genre);
+
+        // Katta muqova: rasm bo'lsa rasm, bo'lmasa kategoriya belgisi
+        var box = $('omCoverBox'), img = $('omCover'), emoji = $('omEmoji');
+        BG.forEach(function (c) { box.classList.remove(c); });
+        box.classList.add('bg-slate-100');
+        if (d.cover) {
+            img.src = d.cover;
+            img.alt = d.title || '';
+            img.classList.remove('hidden');
+            emoji.textContent = '';
+        } else {
+            img.removeAttribute('src');
+            img.alt = '';
+            img.classList.add('hidden');
+            emoji.textContent = d.emoji || '📕';
+        }
+
+        // Talaba
+        $('omStudent').textContent = d.student || '';
+        setText('omHemis', d.hemis);
+        setText('omGroup', d.group);
+        setText('omFaculty', d.faculty);
+
+        // Generatsiya kodi (offlayn berilganda kod bo'lmaydi)
+        $('omCodeWrap').classList.toggle('hidden', !d.code);
+        $('omCode').textContent = d.code || '';
+
+        // Holat, sanalar, xodim
+        setText('omStatus', d.status);
+        setText('omReserved', d.reserved);
+        setText('omPicked', d.picked);
+        setText('omReturned', d.returned);
+        setText('omStaff', d.staff ? d.staff : (d.offline ? '' : ''));
+
+        // Avto-rad etilgan ogohlantirishi
+        $('omAuto').classList.toggle('hidden', !d.auto);
+    }
+
+    function openModal(trigger) {
+        var data;
+        try {
+            data = JSON.parse(trigger.getAttribute('data-order'));
+        } catch (err) {
+            return;   // buzilgan ma'lumot – modal ochilmaydi
+        }
+
+        lastFocus = document.activeElement;
+        fill(data);
+
+        modal.inert = false;
+        modal.classList.remove('opacity-0', 'pointer-events-none');
+        modal.classList.add('opacity-100');
+        document.body.classList.add('overflow-hidden');
+        modal.scrollTop = 0;
+        closeBtn.focus({ preventScroll: true });
+    }
+
+    function closeModal() {
+        modal.classList.add('opacity-0', 'pointer-events-none');
+        modal.classList.remove('opacity-100');
+        document.body.classList.remove('overflow-hidden');
+        modal.inert = true;
+
+        if (lastFocus && typeof lastFocus.focus === 'function') {
+            lastFocus.focus({ preventScroll: true });
+        }
+    }
+
+    function isOpen() { return !modal.classList.contains('pointer-events-none'); }
+
+    // Kitob nomi / rasmi bosilganda (hodisa delegatsiyasi)
+    document.addEventListener('click', function (event) {
+        var trigger = event.target.closest('[data-order-open]');
+        if (trigger) {
+            event.preventDefault();
+            openModal(trigger);
+        }
+    });
+
+    closeBtn.addEventListener('click', closeModal);
+
+    // Qoraytirilgan fonga bosilsa yopiladi, oyna ichiga bosilsa – yo'q
+    modal.addEventListener('click', function (event) {
+        if (event.target === modal) { closeModal(); }
+    });
+
+    // Esc – yopish, Tab – oyna ichida aylantirish
+    document.addEventListener('keydown', function (event) {
+        if (!isOpen()) { return; }
+
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeModal();
+            return;
+        }
+
+        if (event.key === 'Tab') {
+            var items = Array.prototype.filter.call(modal.querySelectorAll(FOCUSABLE), function (n) {
+                return n.offsetParent !== null;
+            });
+            if (!items.length) { return; }
+
+            var first = items[0], last = items[items.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault(); last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault(); first.focus();
+            }
+        }
+    });
+
+    // "Orqaga" tugmasi bilan qaytilganda ochiq oyna qolib ketmasin
+    window.addEventListener('pageshow', function () { if (isOpen()) { closeModal(); } });
 })();
 </script>
 

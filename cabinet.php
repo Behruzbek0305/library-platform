@@ -188,7 +188,7 @@ $reservations = [];
 try {
     $stmt = $pdo->prepare(
         'SELECT r.id, r.reserved_date, r.pickup_days, r.pickup_deadline, r.status,
-                r.picked_up_at, r.returned_at, r.due_date, r.pickup_code,
+                r.picked_up_at, r.returned_at, r.due_date, r.auto_rejected, r.pickup_code,
                 b.id AS book_id, b.title, b.author
          FROM reservations r
          JOIN books b ON b.id = r.book_id
