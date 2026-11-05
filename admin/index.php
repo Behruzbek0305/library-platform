@@ -97,7 +97,7 @@ function renderGenerationCode(?string $code, bool $isOffline): void
         <div class="mt-1.5 inline-flex flex-wrap items-center gap-x-1.5 px-2 py-1 rounded-md border
                     bg-amber-100 text-amber-900 border-amber-300 text-[11px] leading-tight"
              title="Talaba kodi">
-            <span class="font-semibold">🔑 Code:</span>
+            <span class="font-semibold">Code:</span>
             <span class="font-mono text-xs font-bold tracking-wider"><?= e(formatReservationCode($code)) ?></span>
         </div>
         <?php
@@ -108,9 +108,9 @@ function renderGenerationCode(?string $code, bool $isOffline): void
     ?>
     <div class="mt-1.5 inline-flex items-center gap-1.5 px-2 py-1 rounded-md border
                 bg-slate-50 text-slate-500 border-slate-200 text-[11px] leading-tight">
-        <span>🔑 Kod yo'q</span>
+        <span>Kod yo'q</span>
         <span class="text-slate-400">(<?= $isOffline ? 'offlayn berilgan' : 'eski yozuv' ?>)</span>
-    </div>
+    </div>  
     <?php
 }
 
@@ -444,7 +444,7 @@ require_once __DIR__ . '/../includes/header.php';
      6-belgi kiritilishi bilan forma o'zi yuboriladi (pastdagi JS). -->
 <form method="get" action="<?= e(url('admin/index.php')) ?>" id="codeSearchForm"
       class="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3 flex flex-col sm:flex-row sm:items-center gap-2">
-    <label for="codeInput" class="text-sm font-semibold text-amber-900 shrink-0">🔑 Talaba kodi:</label>
+    <label for="codeInput" class="text-sm font-semibold text-amber-900 shrink-0">Talaba kodi:</label>
 
     <input type="text" id="codeInput" name="code" value="<?= e($filters['code']) ?>"
            maxlength="7" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false"
