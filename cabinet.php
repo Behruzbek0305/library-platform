@@ -87,7 +87,7 @@ function reservationStatusInfo(array $r): array
 
     if ($status === 'rad_etildi') {
         return empty($r['rejected_by'])
-            ? ['⏱️ Avto-rad etilgan', 'bg-red-100 text-red-700']
+            ? ['⏱️ Avto-rad etilgan', 'bg-amber-100 text-amber-800']
             : ['Rad etildi', 'bg-red-100 text-red-700'];
     }
     if ($status === 'berilgan') {
@@ -102,6 +102,22 @@ function reservationStatusInfo(array $r): array
         'qaytarildi'  => ['Qaytarildi', 'bg-slate-200 text-slate-700'],
         default       => ['Kutilmoqda', 'bg-amber-100 text-amber-700'],
     };
+}
+
+/**
+ * Ro'yxat uchun holat belgisi. Rad etilgan va rejected_by bo'sh bo'lsa
+ * (muddati o'tib tizim rad etgan) – SARIQ "⏱️ Avto-rad etilgan" belgisi,
+ * qolgan holatlarda odatdagi statusBadge().
+ */
+function reservationBadge(array $r): string
+{
+    // rejected_by ham uzatiladi: bo'sh bo'lsa avto-rad (sariq), to'la bo'lsa oddiy "Rad etildi"
+    return statusBadge(
+        (string) ($r['status'] ?? ''),
+        (string) ($r['pickup_deadline'] ?? ''),
+        (string) ($r['due_date'] ?? ''),
+        (int) ($r['rejected_by'] ?? 0)
+    );
 }
 
 /**
@@ -384,13 +400,15 @@ require_once __DIR__ . '/includes/header.php';
             <div class="min-w-0">
                 <dt class="text-slate-500"><?= e($label) ?></dt>
                 <dd class="font-semibold break-words flex items-center gap-2 flex-wrap">
-                    <?php if ($value !== ''): ?>
-                        <!-- select-text: matn bemalol belgilanadi va nusxalanadi -->
-                        <span class="select-text cursor-text <?= $copyable ? 'font-mono' : '' ?>"
+                    <?php if ($value !== '' && $copyable): ?>
+                        <!-- HEMIS ID: o'zini ustiga bosilsa nusxalanadi (hemis.js dagi [data-copy]) -->
+                        <span data-copy="<?= e($value) ?>" title="Nusxalash uchun bosing"
+                              class="font-mono cursor-pointer hover:underline select-text rounded px-1 -mx-1 transition-colors"
                               style="user-select: text; -webkit-user-select: text;"><?= e($value) ?></span>
-                        <?php if ($copyable): ?>
-                            <?php renderCopyButton($value); ?>
-                        <?php endif; ?>
+                        <span class="text-xs font-normal text-slate-400">(nusxalash uchun bosing)</span>
+                    <?php elseif ($value !== ''): ?>
+                        <span class="select-text cursor-text"
+                              style="user-select: text; -webkit-user-select: text;"><?= e($value) ?></span>
                     <?php else: ?>
                         <span class="text-amber-600 font-normal">kiritilmagan</span>
                     <?php endif; ?>
@@ -452,7 +470,7 @@ require_once __DIR__ . '/includes/header.php';
                             <!-- REAL VAQT TAYMERI -->
                             <?php renderDeadlineTimer($r); ?>
                         </td>
-                        <td class="px-4 py-3"><?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? ''), (string) ($r['due_date'] ?? '')) ?></td>
+                        <td class="px-4 py-3"><?= reservationBadge($r) ?></td>
                         <td class="px-4 py-3 text-right">
                             <?php if ($r['status'] === 'kutilmoqda'): ?>
                                 <form method="post" action="<?= e(url('cabinet.php')) ?>"
@@ -479,7 +497,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="bg-white border border-slate-200 rounded-xl p-4">
                 <div class="flex items-start justify-between gap-2">
                     <div class="min-w-0"><?php renderBookTrigger($r); ?></div>
-                    <div class="shrink-0"><?= statusBadge((string) $r['status'], (string) ($r['pickup_deadline'] ?? ''), (string) ($r['due_date'] ?? '')) ?></div>
+                    <div class="shrink-0"><?= reservationBadge($r) ?></div>
                 </div>
 
                 <?php renderPickupCode($r); ?>

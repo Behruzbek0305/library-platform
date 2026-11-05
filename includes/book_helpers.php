@@ -305,18 +305,17 @@ function deleteCoverFile(?string $relativePath): void
 //    $dueDate  – qaytarish muddati (berilgan uchun; o'tsa KECHIKISH hisoblanadi,
 //                kitob baribir talaba qo'lida qolaveradi)
 // ------------------------------------------------------------
-function statusBadge(string $status, ?string $deadline = null, ?string $dueDate = null, ?int $auto = null): string
+function statusBadge(string $status, ?string $deadline = null, ?string $dueDate = null, mixed $rejectedBy = false): string
 {
     // Muddati o'tib avtomatik rad etilgan (auto_rejected = 1)
-    if ($status === 'rad_etildi' && $auto) {
-        return '<span class="whitespace-nowrap text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-300 font-medium">⏱️ Avto-rad etilgan</span>';
-    }
-
-    // Oddiy (qo'lda) rad etilgan
     if ($status === 'rad_etildi') {
-        $isOverdue = $deadline !== null && $deadline !== '' && strtotime($deadline) < time();
-        $label = $isOverdue ? "Rad etildi (muddati o'tgan)" : "Rad etildi";
-        return '<span class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">' . e($label) . '</span>';
+        // $rejectedBy uzatilgan (false emas) va bo'sh bo'lsa – muddati o'tib tizim avtomatik rad etgan
+        if ($rejectedBy !== false && empty($rejectedBy)) {
+            return '<span class="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-medium whitespace-nowrap">⏱️ Avto-rad etilgan</span>';
+        }
+
+        // Kutubxonachi qo'lda rad etgan – muddatga qaramasdan shunchaki "Rad etildi"
+        return '<span class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">Rad etildi</span>';
     }
 
     // "Berilgan": muddat o'tsa kechikish belgisi chiqadi, lekin kitob avtomatik "qaytarildi" bo'lmaydi
