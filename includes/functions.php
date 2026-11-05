@@ -50,10 +50,13 @@ function redirect(string $path): never
 // ------------------------------------------------------------
 const HEMIS_ID_LENGTH = 12;
 
-/** HEMIS ID to'g'ri formatdami? (faqat raqam, aniq HEMIS_ID_LENGTH ta) */
+// Xato matni: frontend (hemis.js) va backend bir xil matn chiqaradi
+const HEMIS_ID_ERROR = "HEMIS ID ro'ppa-rosa " . HEMIS_ID_LENGTH . " ta raqamdan iborat bo'lishi shart!";
+
+/** HEMIS ID to'g'ri formatdami? (faqat raqam, aniq 12 ta; D – oxirgi "\n" ni ham rad etadi) */
 function isValidHemisId(string $hemisId): bool
 {
-    return (bool) preg_match('/^\d{' . HEMIS_ID_LENGTH . '}$/', $hemisId);
+    return (bool) preg_match('/^\d{' . HEMIS_ID_LENGTH . '}$/D', $hemisId);
 }
 
 // ------------------------------------------------------------

@@ -75,7 +75,7 @@ if ($bookId === false || $bookId < 1) {
     $errors[] = "Kitob noto'g'ri tanlangan.";
 }
 if (!isValidHemisId($hemisId)) {
-    $errors[] = 'Talaba HEMIS ID si aniq ' . HEMIS_ID_LENGTH . ' ta raqamdan iborat bo\'lishi kerak (masalan: 341231102185).';
+    $errors[] = HEMIS_ID_ERROR;
 }
 if ($fullName === '' || mb_strlen($fullName) < 3) {
     $errors[] = 'Talaba FIO sini kiriting.';

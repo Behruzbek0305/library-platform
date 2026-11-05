@@ -307,20 +307,19 @@ function deleteCoverFile(?string $relativePath): void
 // ------------------------------------------------------------
 function statusBadge(string $status, ?string $deadline = null, ?string $dueDate = null, ?int $auto = null): string
 {
+    // Muddati o'tib avtomatik rad etilgan (auto_rejected = 1)
     if ($status === 'rad_etildi' && $auto) {
         return '<span class="whitespace-nowrap text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-300 font-medium">⏱️ Avto-rad etilgan</span>';
     }
-    
+
+    // Oddiy (qo'lda) rad etilgan
     if ($status === 'rad_etildi') {
         $isOverdue = $deadline !== null && $deadline !== '' && strtotime($deadline) < time();
         $label = $isOverdue ? "Rad etildi (muddati o'tgan)" : "Rad etildi";
         return '<span class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">' . e($label) . '</span>';
     }
 
-    // "Berilgan" holatida muddat o'tgan bo'lsa – kechikish belgisi chiqadi.
-    // DIQQAT: bu kitobni avtomatik "qaytarildi" DEMAYDI! Kitob talaba
-    // qo'lida turibveradi, kutubxonachi uni faqat fizik qabul qilganda
-    // «Qaytarildi» tugmasini bosadi.
+    // "Berilgan": muddat o'tsa kechikish belgisi chiqadi, lekin kitob avtomatik "qaytarildi" bo'lmaydi
     if ($status === 'berilgan') {
         $overdue = $dueDate !== null && $dueDate !== '' && strtotime($dueDate) < time();
         if ($overdue) {
@@ -627,9 +626,10 @@ function renderOfflineIssueForm(int $bookId, string $variant = 'modal', string $
                 Talabaning HEMIS ID si
             </label>
             <input type="text" id="off_hemis_<?= e($variant) ?>" name="hemis_id" required
-                   maxlength="20" inputmode="numeric" autocomplete="off"
+                    data-digits-only data-hemis-length='12'
+                    inputmode="numeric" autocomplete="off"
                    placeholder="Masalan: 123456789012" class="<?= $fieldClass ?>">
-            <p class="text-xs text-slate-500">Faqat raqam (6 tadan 20 tagacha).</p>
+            <p class="text-xs text-slate-500">Faqat raqam.</p>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -126,10 +126,9 @@ $hasBookModalJs = is_readable(__DIR__ . '/../assets/js/book-modal.js');
                                     Talabaning HEMIS ID si
                                 </label>
                                 <input type="text" id="off_hemis_modal" name="hemis_id" required
-                                       maxlength="<?= (int) HEMIS_ID_LENGTH ?>" minlength="<?= (int) HEMIS_ID_LENGTH ?>"
-                                       pattern="\d{<?= (int) HEMIS_ID_LENGTH ?>}" inputmode="numeric" autocomplete="off"
-                                       data-digits-only
-                                       placeholder="Masalan: 341231102185" class="<?= e(offlineFieldClass()) ?>">
+                                    inputmode="numeric" autocomplete="off"
+                                    data-digits-only data-hemis-length="<?= (int) HEMIS_ID_LENGTH ?>"
+                                    placeholder="Masalan: 341231102185" class="<?= e(offlineFieldClass()) ?>">
                                 <p class="text-xs text-slate-500">Faqat raqam, aniq <?= (int) HEMIS_ID_LENGTH ?> ta.</p>
                             </div>
 

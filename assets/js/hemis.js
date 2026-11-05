@@ -1,16 +1,22 @@
 /**
  * ============================================================
  *  Fayl: assets/js/hemis.js
- *  Vazifasi: HEMIS ID bilan ishlaydigan ikkita kichik imkoniyat.
+ *  Vazifasi: HEMIS ID bilan ishlaydigan kichik imkoniyatlar.
  *
  *  1) NUSXALASH: [data-copy] atributli element (tugma) bosilganda
- *     uning qiymati (masalan 341231102185) clipboard'ga nusxalanadi va
- *     pastda qisqa "Nusxalandi" xabari chiqadi.
- *     Ishlatiladi: admin paneldagi jadval va kartochkalar, "Mening kabinetim".
- *     (includes/book_helpers.php dagi renderHemisCopy() shu atributni qo'yadi.)
+ *     uning qiymati (masalan 341231102185 yoki kod K7M4P2) clipboard'ga
+ *     nusxalanadi va pastda qisqa "Nusxalandi" xabari chiqadi.
  *
- *  2) FAQAT RAQAM: [data-digits-only] atributli input'larda harf, bo'shliq
- *     va boshqa belgilar avtomatik o'chiriladi (nusxalab qo'yilganda ham).
+ *  2) FAQAT RAQAM: [data-digits-only] input'larda harf, bo'shliq va boshqa
+ *     belgilar avtomatik o'chiriladi (nusxalab qo'yilganda ham).
+ *     MUHIM: qiymat HECH QACHON qirqilmaydi (slice yo'q) – 12 tadan ko'p
+ *     raqam kiritilsa, yuborishda xatolik chiqadi.
+ *
+ *  3) VALIDATSIYA: [data-hemis-length] atributli input'ning qiymati forma
+ *     yuborilishida aniq shu uzunlikdagi raqamlardan iborat bo'lishi shart
+ *     (/^\d{12}$/). Aks holda forma yuborilmaydi va xato matni chiqadi:
+ *     "HEMIS ID ro'ppa-rosa 12 ta raqamdan iborat bo'lishi shart!"
+ *     (Server tomonida ham xuddi shu tekshiruv bor: includes/functions.php)
  *
  *  Xavfsizlik: xabar matni faqat textContent orqali qo'yiladi (innerHTML yo'q).
  * ============================================================
@@ -19,7 +25,7 @@
     'use strict';
 
     // ------------------------------------------------------------
-    // 1. "NUSXALANDI" XABARI (bitta element, kerak bo'lganda yaratiladi)
+    // 1. "NUSXALANDI" XABARI
     // ------------------------------------------------------------
     var toast      = null;
     var toastTimer = null;
@@ -32,7 +38,6 @@
             document.body.appendChild(toast);
         }
 
-        // Rang: muvaffaqiyat – qora fon, xato – qizil fon
         toast.className =
             'fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] px-4 py-2 rounded-md shadow-lg text-sm ' +
             'text-white transition-opacity duration-200 ' + (isError ? 'bg-red-600' : 'bg-slate-800');
@@ -47,8 +52,7 @@
 
     // ------------------------------------------------------------
     // 2. MATNNI NUSXALASH
-    //    Zamonaviy usul: navigator.clipboard (faqat HTTPS yoki localhost'da ishlaydi).
-    //    Zaxira usul: yashirin textarea + execCommand('copy') (oddiy http serverlar uchun).
+    //    navigator.clipboard (HTTPS/localhost) yoki zaxira: execCommand('copy')
     // ------------------------------------------------------------
     function fallbackCopy(text) {
         var area = document.createElement('textarea');
@@ -81,7 +85,7 @@
     }
 
     // ------------------------------------------------------------
-    // 3. BOSILGANDA NUSXALASH (hodisa delegatsiyasi: keyin qo'shilgan elementlar uchun ham ishlaydi)
+    // 3. BOSILGANDA NUSXALASH (hodisa delegatsiyasi)
     // ------------------------------------------------------------
     var HIGHLIGHT = ['bg-green-100', 'text-green-700'];
 
@@ -100,13 +104,12 @@
 
         copyText(value).then(function (ok) {
             if (!ok) {
-                showToast('Nusxalab bo\'lmadi. Raqamni qo\'lda belgilab oling.', true);
+                showToast('Nusxalab bo\'lmadi. Matnni qo\'lda belgilab oling.', true);
                 return;
             }
 
             showToast('Nusxalandi: ' + value, false);
 
-            // Tugma bir lahza yashil bo'lib turadi
             HIGHLIGHT.forEach(function (cls) { target.classList.add(cls); });
             setTimeout(function () {
                 HIGHLIGHT.forEach(function (cls) { target.classList.remove(cls); });
@@ -115,12 +118,10 @@
     });
 
     // ------------------------------------------------------------
-    // 4. FAQAT RAQAM: [data-digits-only] input'larida boshqa belgilarni o'chiramiz
-    //    (nusxalab qo'yilgan "341 231 102 185" ham "341231102185" bo'ladi)
+    // 4. FAQAT RAQAM (qirqish YO'Q)
+    //    "341 231 102 185" → "341231102185". 12 tadan ko'p raqam kiritilsa,
+    //    ortiqcha raqamlar o'chib ketmaydi – yuborishda xato ko'rsatiladi.
     // ------------------------------------------------------------
-    // Qo'yishda (paste): brauzer maxlength bo'yicha matnni bo'shliqlar bilan birga
-    // kesib yuboradi ("341 231 102 185" → "341 231 102 " va raqamlar yo'qoladi).
-    // Shuning uchun avval bo'shliqlarni tozalaymiz, keyin o'zimiz joylaymiz.
     document.addEventListener('paste', function (event) {
         var field = event.target;
         if (!field || !field.matches || !field.matches('input[data-digits-only]')) {
@@ -135,16 +136,9 @@
         event.preventDefault();
 
         var digits = String(clip.getData('text') || '').replace(/\D+/g, '');
-        var start  = field.selectionStart;
-        var end    = field.selectionEnd;
-        field.setRangeText(digits, start, end, 'end');
+        field.setRangeText(digits, field.selectionStart, field.selectionEnd, 'end');
 
-        var max = parseInt(field.getAttribute('maxlength'), 10);
-        if (!isNaN(max) && field.value.length > max) {
-            field.value = field.value.slice(0, max);
-        }
-
-        // Boshqa skriptlar (masalan book-modal.js) ham o'zgarishdan xabardor bo'lsin
+        // Boshqa skriptlar ham o'zgarishdan xabardor bo'lsin
         field.dispatchEvent(new Event('input', { bubbles: true }));
     });
 
@@ -155,15 +149,71 @@
         }
 
         var cleaned = field.value.replace(/\D+/g, '');
-
-        // maxlength nusxalab qo'yishda ham ishlaydi, lekin ehtiyot uchun qirqamiz
-        var max = parseInt(field.getAttribute('maxlength'), 10);
-        if (!isNaN(max) && cleaned.length > max) {
-            cleaned = cleaned.slice(0, max);
-        }
-
         if (cleaned !== field.value) {
             field.value = cleaned;
         }
     });
+
+    // ------------------------------------------------------------
+    // 5. HEMIS ID VALIDATSIYASI (forma yuborilganda)
+    // ------------------------------------------------------------
+    function hemisMessage(length) {
+        return "HEMIS ID ro'ppa-rosa " + length + " ta raqamdan iborat bo'lishi shart!";
+    }
+
+    /** Input ostidagi xato yozuvini ko'rsatadi (kerak bo'lsa yaratadi) */
+    function showFieldError(field, message) {
+        if (!field.hemisErrorEl) {
+            var box = document.createElement('p');
+            box.setAttribute('role', 'alert');
+            box.className = 'text-xs text-red-600 font-semibold mt-1';
+            field.insertAdjacentElement('afterend', box);
+            field.hemisErrorEl = box;
+        }
+        field.hemisErrorEl.textContent = message;
+        field.setAttribute('aria-invalid', 'true');
+        field.classList.add('border-red-500');
+    }
+
+    function clearFieldError(field) {
+        if (field.hemisErrorEl) {
+            field.hemisErrorEl.remove();
+            field.hemisErrorEl = null;
+        }
+        field.removeAttribute('aria-invalid');
+        field.classList.remove('border-red-500');
+    }
+
+    // Yozish boshlanganda xato yozuvi o'chadi
+    document.addEventListener('input', function (event) {
+        var field = event.target;
+        if (field && field.matches && field.matches('input[data-hemis-length]')) {
+            clearFieldError(field);
+        }
+    });
+
+    // Capture bosqichida: boshqa ishlovchilardan oldin tekshiramiz
+    document.addEventListener('submit', function (event) {
+        var form = event.target;
+        if (!form || !form.querySelectorAll) {
+            return;
+        }
+
+        var fields = form.querySelectorAll('input[data-hemis-length]');
+
+        for (var i = 0; i < fields.length; i++) {
+            var field  = fields[i];
+            var length = parseInt(field.getAttribute('data-hemis-length'), 10) || 12;
+            var value  = field.value.replace(/\s+/g, '');
+            var regex  = new RegExp('^\\d{' + length + '}$');
+
+            if (!regex.test(value)) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                showFieldError(field, hemisMessage(length));
+                field.focus();
+                return;
+            }
+        }
+    }, true);
 })();
