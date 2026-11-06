@@ -23,6 +23,8 @@
 --  7-bosqich: books.field (Soha) va books.genre (Janr) – kengaytirilgan filtrlar.
 --  8-bosqich: reservations.pickup_code – 6 belgili (harf + raqam) talaba kodi.
 --  Xodimlar izi: served_by / returned_by / rejected_by (kim tasdiqladi, qabul qildi, rad etdi).
+--  10-bosqich (debugging): users.password_set + tasdiqlashda qaytarish muddati (due_date, loan_days).
+--             Mavjud bazani yangilash uchun: migrations/010_tuzatishlar.sql
 --
 --  Ishga tushirish: phpMyAdmin → "Import" bo'limidan shu faylni yuklang.
 --  DIQQAT: bu fayl bazani o'chirib qayta yaratadi. Mavjud bazani saqlab qolmoqchi
@@ -62,6 +64,7 @@ CREATE TABLE `users` (
   `group_name` VARCHAR(30)  NULL,                             -- Guruh (talabalar uchun)
   `hemis_id`   VARCHAR(20)  NULL,                             -- HEMIS ID – keyingi integratsiya uchun
   `password`   VARCHAR(255) NOT NULL,                         -- password_hash() natijasi (ochiq parol SAQLANMAYDI)
+  `password_set` TINYINT(1) NOT NULL DEFAULT 1,               -- 0 = kutubxonachi offlayn yaratgan, parol hali o'rnatilmagan (register.php da o'rnatiladi)
   `role`       ENUM('talaba','admin') NOT NULL DEFAULT 'talaba', -- Rol: talaba yoki kutubxonachi (admin)
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,  -- Ro'yxatdan o'tgan vaqti
   PRIMARY KEY (`id`),

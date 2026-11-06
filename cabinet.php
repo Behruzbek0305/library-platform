@@ -64,16 +64,6 @@ function reservationDeadline(array $r): ?array
     return null;
 }
 
-/** Mas'ul xodim matni: ism, yoki "Kutilmoqda" (hali biriktirilmagan), yoki "—". */
-function staffText(array $r): string
-{
-    $name = trim((string) ($r['staff_name'] ?? ''));
-    if ($name !== '') {
-        return $name;
-    }
-    return (string) ($r['status'] ?? '') === 'kutilmoqda' ? 'Kutilmoqda' : '—';
-}
-
 /**
  * Modal va ro'yxat uchun holat yozuvi va Tailwind sinflari.
  * Rad etilgan va rejected_by bo'sh bo'lsa – muddati o'tib AVTOMATIK rad etilgan
@@ -90,11 +80,16 @@ function reservationStatusInfo(array $r): array
             ? ['⏱️ Avto-rad etilgan', 'bg-amber-100 text-amber-800']
             : ['Rad etildi', 'bg-red-100 text-red-700'];
     }
-    if ($status === 'berilgan') {
+    // Kitob qo'lga berilganda holat "tasdiqlandi" bo'ladi, shuning uchun kechikish ikkalasi uchun tekshiriladi
+    if ($status === 'berilgan' || $status === 'tasdiqlandi') {
         $late = !empty($r['due_date']) && strtotime((string) $r['due_date']) < time();
-        return $late
-            ? ['Kechikkan', 'bg-orange-100 text-orange-700']
-            : ['Berilgan', 'bg-green-100 text-green-700'];
+        if ($late) {
+            return ['Kechikkan', 'bg-orange-100 text-orange-700'];
+        }
+        if ($status === 'berilgan') {
+            return ['Berilgan', 'bg-green-100 text-green-700'];
+        }
+        // "tasdiqlandi" (muddati o'tmagan) – pastdagi match ishlaydi
     }
 
     return match ($status) {
@@ -163,7 +158,7 @@ function reservationDataAttrs(array $r): string
         'data-returned'     => formatDateTime((string) ($r['returned_at'] ?? '')),
         'data-timer-label'  => $deadline['label'] ?? '',
         'data-timer-at'     => $deadline !== null ? date('c', strtotime($deadline['value'])) : '',
-        'data-staff'        => staffText($r),
+        'data-staff'        => staffTrailText($r),
         'data-status'       => $statusText,
         'data-status-class' => $statusClass,
     ];
@@ -198,19 +193,6 @@ function renderBookTrigger(array $r): void
                     class="font-semibold text-blue-600 hover:underline text-left break-words"><?= e($r['title']) ?></button>
             <div class="text-slate-500 break-words"><?= e($r['author']) ?></div>
         </div>
-    </div>
-    <?php
-}
-
-/** "Mas'ul xodim: Ism" qatori (jadval va telefon kartochkasi uchun). */
-function renderStaffLine(array $r): void
-{
-    $text    = staffText($r);
-    $pending = $text === 'Kutilmoqda';
-    ?>
-    <div class="text-slate-700 mt-0.5">
-        Mas'ul xodim:
-        <b class="<?= $pending ? 'text-amber-600' : '' ?>"><?= e($text) ?></b>
     </div>
     <?php
 }
@@ -342,10 +324,14 @@ try {
                 r.picked_up_at, r.returned_at, r.due_date, r.pickup_code,
                 r.served_by, r.rejected_by, r.is_offline,
                 b.id AS book_id, b.title, b.author, b.category, b.cover_image,
-                staff.name AS staff_name
+                staff.name AS staff_name,
+                returner.name AS returner_name,
+                rejecter.name AS rejecter_name
          FROM reservations r
          JOIN books b ON b.id = r.book_id
-         LEFT JOIN users staff ON r.served_by = staff.id
+         LEFT JOIN users staff    ON r.served_by   = staff.id
+         LEFT JOIN users returner ON r.returned_by = returner.id
+         LEFT JOIN users rejecter ON r.rejected_by = rejecter.id
          WHERE r.user_id = :user_id
          ORDER BY r.created_at DESC, r.id DESC'
     );
@@ -465,7 +451,7 @@ require_once __DIR__ . '/includes/header.php';
                             <?php endif; ?>
 
                             <!-- MAS'UL XODIM -->
-                            <?php renderStaffLine($r); ?>
+                            <?php renderStaffTrail($r); ?>
 
                             <!-- REAL VAQT TAYMERI -->
                             <?php renderDeadlineTimer($r); ?>
@@ -519,7 +505,7 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endif; ?>
 
                     <!-- MAS'UL XODIM -->
-                    <?php renderStaffLine($r); ?>
+                    <?php renderStaffTrail($r); ?>
 
                     <!-- REAL VAQT TAYMERI -->
                     <?php renderDeadlineTimer($r); ?>

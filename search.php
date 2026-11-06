@@ -13,6 +13,10 @@
 
 declare(strict_types=1);
 
+// Har bir tugma bosilganda muddati o'tgan band qilishlarni tozalash shart emas
+// (book_helpers.php buni SKIP_AUTO_EXPIRE bo'lsa o'tkazib yuboradi)
+define('SKIP_AUTO_EXPIRE', true);
+
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/book_helpers.php';

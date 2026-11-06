@@ -18,6 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && csrfVerify($_POST['csrf_token'] ?? 
 
     // Sessiya yo'q qilingani uchun flash xabar uchun yangi sessiya ochamiz
     session_start();
+    session_regenerate_id(true);   // eski sessiya ID'si qayta ishlatilmasligi uchun
     setFlash('success', 'Tizimdan chiqdingiz.');
 }
 

@@ -24,6 +24,22 @@ $email  = '';
 const DUMMY_HASH = '$2y$10$w4q0/k82iJbbF5dSuix7KupmGuj9mHqOtAIux1IGku0KuLQcH3f6e';
 
 // ------------------------------------------------------------
+// URINISHLARNI CHEKLASH (oddiy himoya, sessiya asosida)
+// 10 daqiqa ichida 5 marta xato kiritilsa, 10 daqiqa kutish kerak.
+// Eslatma: bu faqat oddiy brauzer hujumlarini sekinlashtiradi; cookie'ni tashlab
+// ketadigan skriptlarga qarshi serverning o'zida (fail2ban, WAF) himoya kerak.
+// ------------------------------------------------------------
+const LOGIN_MAX_FAILS   = 5;
+const LOGIN_WINDOW_SEC  = 600;
+
+$fails = $_SESSION['login_fails'] ?? ['count' => 0, 'since' => time()];
+if (time() - (int) $fails['since'] > LOGIN_WINDOW_SEC) {
+    $fails = ['count' => 0, 'since' => time()];   // oyna tugadi – hisob yangilanadi
+}
+$blocked   = (int) $fails['count'] >= LOGIN_MAX_FAILS;
+$waitMin   = max(1, (int) ceil((LOGIN_WINDOW_SEC - (time() - (int) $fails['since'])) / 60));
+
+// ------------------------------------------------------------
 // FORMA YUBORILGANDA (POST)
 // ------------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -31,6 +47,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // 1) CSRF tokenni tekshiramiz
     if (!csrfVerify($_POST['csrf_token'] ?? null)) {
         $errors[] = "Sessiya muddati tugagan. Sahifani yangilab, qayta urinib ko'ring.";
+    } elseif ($blocked) {
+        $errors[] = "Juda ko'p xato urinish. Taxminan {$waitMin} daqiqadan keyin qayta urinib ko'ring.";
     } else {
         $email    = mb_strtolower(trim((string) ($_POST['email'] ?? '')));
         $password = (string) ($_POST['password'] ?? '');
@@ -58,6 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ]);
                     }
 
+                    unset($_SESSION['login_fails']);   // muvaffaqiyatli kirish – hisob tozalanadi
                     loginUser((int) $found['id']);
                     setFlash('success', 'Xush kelibsiz, ' . $found['name'] . '!');
 
@@ -66,6 +85,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 // Email yoki parol noto'g'ri (qaysi biri ekanini aytmaymiz)
+                $fails['count'] = (int) $fails['count'] + 1;
+                $_SESSION['login_fails'] = $fails;
                 $errors[] = "Email yoki parol noto'g'ri.";
             } catch (PDOException $ex) {
                 error_log('[Kutubxona-ARM] Kirishda xatolik: ' . $ex->getMessage());
@@ -116,6 +137,9 @@ require_once __DIR__ . '/includes/header.php';
     <p class="text-sm text-slate-500 mt-4 text-center">
         Akkauntingiz yo'qmi?
         <a href="<?= e(url('register.php')) ?>" class="text-blue-600 hover:underline">Ro'yxatdan o'tish</a>
+    </p>
+    <p class="text-xs text-slate-400 mt-2 text-center">
+        Kutubxonachi sizni oldin kiritgan bo'lsa, "Ro'yxatdan o'tish" orqali shu email va HEMIS ID bilan parol o'rnating.
     </p>
 
 </div>

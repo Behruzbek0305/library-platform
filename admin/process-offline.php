@@ -63,7 +63,7 @@ if (!csrfVerify($_POST['csrf_token'] ?? null)) {
 // ------------------------------------------------------------
 $bookId    = filter_var($_POST['book_id'] ?? null, FILTER_VALIDATE_INT);
 $hemisId   = normalizeHemisId($_POST['hemis_id'] ?? '');            // faqat raqamlar
-$fullName  = trim((string) ($_POST['student_name'] ?? ''));         // FIO
+$fullName  = trim((string) preg_replace('/\s+/u', ' ', (string) ($_POST['student_name'] ?? ''))); // FIO
 $email     = strtolower(trim((string) ($_POST['email'] ?? $_POST['student_email'] ?? '')));
 $faculty   = trim((string) ($_POST['faculty'] ?? ''));
 $userGroup = trim((string) ($_POST['user_group'] ?? $_POST['group_name'] ?? '')); // Guruh
@@ -88,6 +88,20 @@ if ($faculty === '') {
 }
 if ($userGroup === '') {
     $errors[] = 'Guruhni kiriting.';
+}
+
+// Uzunlik cheklovlari bazadagi ustunlarga mos (users.name 100, email 150, faculty 150, group_name 30)
+if (mb_strlen($fullName) > 100) {
+    $errors[] = 'Talaba FIO si 100 belgidan oshmasin.';
+}
+if (mb_strlen($email) > 150) {
+    $errors[] = 'Email 150 belgidan oshmasin.';
+}
+if (mb_strlen($faculty) > 150) {
+    $errors[] = 'Fakultet nomi 150 belgidan oshmasin.';
+}
+if (mb_strlen($userGroup) > 30) {
+    $errors[] = 'Guruh nomi 30 belgidan oshmasin.';
 }
 
 if ($errors) {
@@ -127,7 +141,7 @@ try {
 
     if ($hemisId !== '') {
         $stmt = $pdo->prepare(
-            "SELECT id, name, email, role FROM users WHERE hemis_id = :hemis LIMIT 1"
+            "SELECT id, name, email, role, hemis_id FROM users WHERE hemis_id = :hemis LIMIT 1"
         );
         $stmt->execute([':hemis' => $hemisId]);
         $student = $stmt->fetch();
@@ -135,7 +149,7 @@ try {
 
     if (!$student && $email !== '') {
         $stmt = $pdo->prepare(
-            "SELECT id, name, email, role FROM users WHERE email = :email LIMIT 1"
+            "SELECT id, name, email, role, hemis_id FROM users WHERE email = :email LIMIT 1"
         );
         $stmt->execute([':email' => $email]);
         $student = $stmt->fetch();
@@ -148,19 +162,41 @@ try {
             setFlash('error',
                 'Bu HEMIS ID / Email tizimda talaba sifatida emas, balki "'
                 . ($student['role'] === 'admin' ? 'kutubxonachi' : $student['role'])
-                . '" sifatida ro\'yxatdan o\'tgan. Boshqa ma\'lumot kiritinng.');
+                . '" sifatida ro\'yxatdan o\'tgan. Boshqa ma\'lumot kiriting.');
             redirect($backUrl);
         }
+        // Email bo'yicha topilgan akkauntning HEMIS ID si kiritilganidan farq qilsa,
+        // bu boshqa talaba: kitobni noto'g'ri odamga yozib yubormaymiz.
+        $foundHemis = (string) ($student['hemis_id'] ?? '');
+        if ($foundHemis !== '' && $hemisId !== '' && $foundHemis !== $hemisId) {
+            $pdo->rollBack();
+            setFlash('error',
+                'Bu email boshqa HEMIS ID ga tegishli akkauntda ishlatilgan. '
+                . 'HEMIS ID va emailni tekshirib, qayta kiriting.');
+            redirect($backUrl);
+        }
+
+        // Akkauntda HEMIS ID yo'q bo'lsa, kiritilgani yozib qo'yiladi
+        // (u boshqada yo'qligi yuqoridagi hemis_id bo'yicha qidiruvda aniqlangan).
+        if ($foundHemis === '' && $hemisId !== '') {
+            $upd = $pdo->prepare('UPDATE users SET hemis_id = :hemis WHERE id = :id');
+            $upd->execute([':hemis' => $hemisId, ':id' => (int) $student['id']]);
+        }
+
         $userId = (int) $student['id'];
         $isNewStudent = false;
     } else {
         // --- 2.4. YO'Q BO'LSA: YANGI TALABA YARATISH (role = 'talaba') ---
-        // Akkaunt parol bilan ochilmaydi – talaba keyinroq "Parolni tiklash"
-        // orqali o'zi parol qo'yadi. Parol maydoni NOT NULL bo'lgani uchun
-        // inkor etilgan (isset() = false) tasodifiy hash saqlanadi.
+        // Akkaunt parol bilan ochilmaydi. Parol maydoni NOT NULL bo'lgani uchun
+        // hech kimga ma'lum bo'lmagan tasodifiy hash saqlanadi va password_set = 0
+        // belgisi qo'yiladi: talaba register.php da shu email va HEMIS ID bilan
+        // ro'yxatdan o'tganda parolini o'zi o'rnatadi (akkaunt "da'vo qilinadi").
+        $hasPwFlag = columnExists($pdo, 'users', 'password_set');
         $stmt = $pdo->prepare(
-            "INSERT INTO users (name, email, password, role, faculty, direction, group_name, hemis_id)
-             VALUES (:name, :email, :password, 'talaba', :faculty, NULL, :grp, :hemis)"
+            "INSERT INTO users (name, email, password, role, faculty, direction, group_name, hemis_id"
+            . ($hasPwFlag ? ', password_set' : '') . ")
+             VALUES (:name, :email, :password, 'talaba', :faculty, NULL, :grp, :hemis"
+            . ($hasPwFlag ? ', 0' : '') . ")"
         );
         $stmt->execute([
             ':name'     => $fullName,
@@ -252,7 +288,7 @@ try {
     // Ustun bo'lmasa (migratsiya hali ishga tushirilmagan eski baza) funksiya
     // muammosiz true qaytaradi – BOOK_SELECT dinamik hisob bilan ishlaydi.
     if (!decrementAvailableCopies($pdo, $bookId)) {
-        // Raketa bo'sh edi – berilmaydi (INSERT ham ortga qaytariladi)
+        // Bo'sh nusxa qolmagan (boshqa jarayon olib ulgurgan) – berilmaydi, INSERT ham ortga qaytariladi
         $pdo->rollBack();
         setFlash('error', 'Kechirasiz, ayni paytda bu kitobning bo\'sh nusxasi qolmadi.');
         redirect($backUrl);
@@ -264,7 +300,7 @@ try {
     $who = $fullName . ($hemisId !== '' ? " (HEMIS: {$hemisId})" : '');
     setFlash('success',
         '✅ «' . $book['title'] . '» kitob ' . $who . ' ga ' . $days . ' kunga berildi.'
-        . ($isNewStudent ? ' Yangi talaba tizimga qo\'shildi.' : '')
+        . ($isNewStudent ? ' Yangi talaba tizimga qo\'shildi (u saytda shu email va HEMIS ID bilan ro\'yxatdan o\'tib, parol o\'rnata oladi).' : '')
         . ' Qaytarish muddati: ' . date('d.m.Y H:i', strtotime($dueDate))
         . '. Muddat tugagach kitob avtomatik qaytgan hisoblanmaydi —'
         . ' talaba kitobni topshirganda admin panelda «Qaytarildi» tugmasini bosing.'
@@ -275,7 +311,7 @@ try {
         $reservationId, $bookId, $userId, $days, (int) ($_SESSION['user_id'] ?? 0)
     ));
 
-    redirect('admin/index.php?status_filter=tasdiqlandi');
+    redirect('admin/index.php?status=tasdiqlandi');
 
 } catch (PDOException $ex) {
     if ($pdo->inTransaction()) {

@@ -1,25 +1,23 @@
 <?php
 /**
  * ============================================================
- *  Fayl: admin/index.php – Admin panel: band qilishlar (REFAKTORING)
+ *  Fayl: admin/index.php – Admin panel: band qilishlar
  *  Funksional talab №8 (Texnik topshiriq, 4-band).
  *
  *  Amallar (hammasi POST + CSRF):
- *    approve – "kutilmoqda"  → "tasdiqlandi"
+ *    approve – "kutilmoqda"  → "tasdiqlandi"  (kutubxonachi QAYTARISH KUNINI TANLAYDI: 1/2/3/5/10)
  *    return  – "tasdiqlandi" → "qaytarildi"
  *    reject  – "kutilmoqda"  → "rad_etildi"
  *
- *  Yangiliklar:
- *    - 8 ta ixcham ustun, gorizontal scroll YO'Q (jadval ekranga 100% moslashadi)
- *    - "HEMIS ID" va "Holati" ustunlari whitespace-nowrap (bitta qatorda)
- *    - "🔑 Talaba kodi" sariq badge talaba FIO si tagida saqlanadi
- *    - auto_rejected = 1 bo'lsa: "⏱️ Avto-rad etilgan" belgisi
- *    - "Kitob" ustunida ixcham muqova rasmi; kitob nomi/rasmi bosilganda
- *      buyurtma tafsilotlari modali ochiladi
+ *  TUZATISHLAR (debugging):
+ *    1) Tasdiqlashda qaytarish muddati (due_date, loan_days) endi yoziladi –
+ *       oldin yozilmagani uchun talaba muddatni ko'rmas, "Kechikkan" hisobi ishlamas edi.
+ *    2) "Kechikkan" belgisi "tasdiqlandi" holatida ham chiqadi (muddat o'tgan bo'lsa).
+ *    3) Taymer endi tasdiqlangan kitoblar uchun ham ishlaydi (topshirishga qolgan vaqt).
+ *    4) Xodimlar izi: tasdiqlagan / qabul qilgan («Qaytarildi») / rad etgan xodim ALOHIDA ko'rinadi.
+ *    5) "Talaba kodi" qidiruvi boshqa filtrlarni yo'qotmaydi.
  *
- *  Eslatma: avval migrations/009_auto_rejected.sql ni ishga tushiring.
- *  Ustun hali yo'q bo'lsa ham sahifa ishlaydi: u holda "rad etgan xodim yo'q"
- *  (rejected_by IS NULL) rad etilgan yozuvlar avto-rad etilgan deb hisoblanadi.
+ *  Ustun hali yo'q bo'lsa ham sahifa ishlaydi (auto_rejected uchun zaxira hisob bor).
  * ============================================================
  */
 
@@ -34,6 +32,9 @@ requireAdmin();
 
 // Filtr uchun ruxsat etilgan holatlar ('' – hammasi)
 const STATUS_FILTERS = ['kutilmoqda', 'tasdiqlandi', 'qaytarildi', 'rad_etildi'];
+
+// Tasdiqlashda standart qaytarish muddati (kun) – select'da shu tanlangan turadi
+const DEFAULT_LOAN_DAYS = 3;
 
 // ------------------------------------------------------------
 // 0. YORDAMCHI FUNKSIYALAR
@@ -82,8 +83,20 @@ function dash(?string $value): string
 }
 
 /**
+ * Kitob talabada turibdi-yu, qaytarish muddati o'tib ketganmi?
+ * (holat "tasdiqlandi" yoki "berilgan" va due_date < hozir)
+ */
+function isOverdue(array $r): bool
+{
+    return in_array((string) $r['status'], ['tasdiqlandi', 'berilgan'], true)
+        && !empty($r['due_date'])
+        && strtotime((string) $r['due_date']) < time();
+}
+
+/**
  * Holat belgisi. Har doim BITTA qatorda (whitespace-nowrap).
  * auto_rejected = 1 bo'lsa – "⏱️ Avto-rad etilgan" maxsus belgisi.
+ * Qaytarish muddati o'tgan bo'lsa – qo'shimcha qizil "Kechikkan" belgisi.
  */
 function adminStatusBadge(array $r): string
 {
@@ -94,7 +107,7 @@ function adminStatusBadge(array $r): string
         return '<span class="' . $base . 'bg-orange-100 text-orange-700 border border-orange-300">⏱️ Avto-rad etilgan</span>';
     }
 
-    return match ($status) {
+    $badge = match ($status) {
         'kutilmoqda'  => '<span class="' . $base . 'bg-amber-100 text-amber-700">Kutilmoqda</span>',
         'tasdiqlandi' => '<span class="' . $base . 'bg-blue-100 text-blue-700">Tasdiqlandi</span>',
         'berilgan'    => '<span class="' . $base . 'bg-green-100 text-green-700">Berilgan</span>',
@@ -102,6 +115,12 @@ function adminStatusBadge(array $r): string
         'rad_etildi'  => '<span class="' . $base . 'bg-red-100 text-red-700">Rad etildi</span>',
         default       => '<span class="' . $base . 'bg-slate-100 text-slate-600">' . e($status) . '</span>',
     };
+
+    if (isOverdue($r)) {
+        $badge .= '<div class="mt-1"><span class="' . $base . 'bg-red-100 text-red-700 font-semibold">⏰ Kechikkan</span></div>';
+    }
+
+    return $badge;
 }
 
 /** Holatning matnli nomi (modal uchun) */
@@ -110,13 +129,16 @@ function adminStatusLabel(array $r): string
     if ($r['status'] === 'rad_etildi' && (int) ($r['auto_rejected'] ?? 0) === 1) {
         return '⏱️ Avto-rad etilgan';
     }
-    return [
+
+    $label = [
         'kutilmoqda'  => 'Kutilmoqda',
         'tasdiqlandi' => 'Tasdiqlandi',
         'berilgan'    => 'Berilgan',
         'qaytarildi'  => 'Qaytarildi',
         'rad_etildi'  => 'Rad etildi',
     ][(string) $r['status']] ?? (string) $r['status'];
+
+    return isOverdue($r) ? $label . ' · ⏰ Kechikkan' : $label;
 }
 
 /**
@@ -141,8 +163,10 @@ function orderPayload(array $r): string
         'status'    => adminStatusLabel($r),
         'reserved'  => formatDateTime((string) $r['created_at']),
         'picked'    => formatDateTime((string) ($r['picked_up_at'] ?? '')),
+        'due'       => formatDateTime((string) ($r['due_date'] ?? '')),
         'returned'  => formatDateTime((string) ($r['returned_at'] ?? '')),
-        'staff'     => (string) ($r['staff_name'] ?? ''),
+        // Xodimlar izi: tasdiqlagan / qabul qilgan / rad etgan (alohida-alohida)
+        'staff'     => staffTrailText($r),
         'offline'   => (int) ($r['is_offline'] ?? 0) === 1,
         'auto'      => $r['status'] === 'rad_etildi' && (int) ($r['auto_rejected'] ?? 0) === 1,
         'deadline'  => formatDateTime((string) ($r['pickup_deadline'] ?? '')),
@@ -180,6 +204,7 @@ function renderBookButton(array $r): void
 
 /**
  * Holatga qarab amal tugmalari.
+ * "Tasdiqlash" formasida QAYTARISH KUNINI tanlash maydoni bor (1/2/3/5/10 kun).
  * Kompyuter jadvalida tugmalar ustma-ust (tor ustun), telefonda yonma-yon.
  */
 function renderActions(array $r, array $filters, bool $compact): void
@@ -219,6 +244,21 @@ function renderActions(array $r, array $filters, bool $compact): void
             <input type="hidden" name="faculty" value="<?= e($filters['faculty']) ?>">
             <input type="hidden" name="group" value="<?= e($filters['group']) ?>">
             <input type="hidden" name="code" value="<?= e($filters['code']) ?>">
+
+            <?php if ($action === 'approve'): ?>
+                <!-- Qaytarish kunini kutubxonachi tanlaydi (server qiymatni qayta tekshiradi) -->
+                <label class="block text-[11px] text-slate-500 mb-0.5">Necha kunga beriladi?</label>
+                <select name="loan_days" aria-label="Necha kunga beriladi (qaytarish muddati)"
+                        class="w-full mb-1 border border-slate-300 rounded-md px-1.5 py-1 bg-white text-xs
+                               focus:outline-none focus:ring-2 focus:ring-green-300">
+                    <?php foreach (OFFLINE_DAY_OPTIONS as $day): ?>
+                        <option value="<?= (int) $day ?>" <?= $day === DEFAULT_LOAN_DAYS ? 'selected' : '' ?>>
+                            <?= (int) $day ?> kun
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            <?php endif; ?>
+
             <button type="submit" class="<?= e($color . ' ' . $size) ?> text-white rounded-md">
                 <?= e($label) ?>
             </button>
@@ -229,27 +269,46 @@ function renderActions(array $r, array $filters, bool $compact): void
     echo '</div>';
 }
 
-/** Qolgan vaqt belgisi (taymer). Matnni pastdagi JS har soniyada yangilaydi. */
+/**
+ * Qolgan vaqt belgisi (taymer). Matnni pastdagi JS har soniyada yangilaydi.
+ *   kutilmoqda           → olib ketish muddati (pickup_deadline), tugasa "Muddati o'tgan"
+ *   tasdiqlandi/berilgan → qaytarish muddati (due_date), tugasa "Kechikkan"
+ */
 function renderTimer(array $r): void
 {
-    if ($r['status'] !== 'kutilmoqda' || empty($r['pickup_deadline'])) {
+    $status = (string) $r['status'];
+
+    if ($status === 'kutilmoqda') {
+        $target  = (string) ($r['pickup_deadline'] ?? '');
+        $title   = 'Olib ketish muddatigacha qolgan vaqt';
+        $expired = "Muddati o'tgan";
+    } elseif ($status === 'tasdiqlandi' || $status === 'berilgan') {
+        $target  = (string) ($r['due_date'] ?? '');
+        $title   = 'Kitobni topshirish muddatigacha qolgan vaqt';
+        $expired = 'Kechikkan';
+    } else {
         return;
     }
 
-    $rem = formatRemainingTime((string) $r['pickup_deadline']);
+    if ($target === '') {
+        return;
+    }
+
+    $rem = formatRemainingTime($target, $expired);
     $cls = $rem['urgent'] || $rem['expired']
         ? 'bg-red-100 text-red-700'
         : 'bg-amber-100 text-amber-800';
     ?>
-    <span data-deadline-ts="<?= (int) strtotime((string) $r['pickup_deadline']) ?>"
+    <span data-deadline-ts="<?= (int) strtotime($target) ?>"
+          data-expired-text="<?= e($expired) ?>" title="<?= e($title) ?>"
           class="inline-block mt-1 px-1.5 py-0.5 rounded font-medium text-xs <?= e($cls) ?>">
-        <?= $rem['urgent'] ? '⚠️' : '⏳' ?> <?= e($rem['text']) ?>
+        <?= $rem['urgent'] || $rem['expired'] ? '⚠️' : '⏳' ?> <?= e($rem['text']) ?>
     </span>
     <?php
 }
 
 // ------------------------------------------------------------
-// 1. AMALLARNI BAJARISH (POST)  – mantiq o'zgarmagan
+// 1. AMALLARNI BAJARISH (POST)
 // ------------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
@@ -281,17 +340,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $resBookId = (int) ($stmtBook->fetchColumn() ?: 0);
 
         if ($action === 'approve') {
+            // Qaytarish muddati: kutubxonachi tanlaydi (1/2/3/5/10 kun).
+            // Noto'g'ri qiymat kelsa – standart muddat (DEFAULT_LOAN_DAYS) olinadi.
+            $loanDays = offlineLoanDays($_POST['loan_days'] ?? null, DEFAULT_LOAN_DAYS);
+            $dueDate  = date('Y-m-d H:i:s', strtotime("+{$loanDays} days"));
+
             $stmt = $pdo->prepare(
                 "UPDATE reservations
-                 SET status = 'tasdiqlandi', picked_up_at = :now, served_by = :staff_id
+                 SET status = 'tasdiqlandi', picked_up_at = :now, due_date = :due_date,
+                     loan_days = :loan_days, served_by = :staff_id
                  WHERE id = :id AND status = 'kutilmoqda'"
             );
             $stmt->execute([
-                ':now'      => $now,
-                ':staff_id' => $staffId > 0 ? $staffId : null,
-                ':id'       => $id,
+                ':now'       => $now,
+                ':due_date'  => $dueDate,
+                ':loan_days' => $loanDays,
+                ':staff_id'  => $staffId > 0 ? $staffId : null,
+                ':id'        => $id,
             ]);
-            $message = 'Band qilish tasdiqlandi. Kitob berilgan vaqt va mas\'ul xodim saqlandi.';
+            $message = "Band qilish tasdiqlandi. Kitob {$loanDays} kunga berildi (qaytarish muddati: "
+                     . date('d.m.Y H:i', strtotime($dueDate)) . ').';
 
         } elseif ($action === 'return') {
             $stmt = $pdo->prepare(
@@ -376,29 +444,28 @@ try {
 
     // reservations.auto_rejected ustuni bormi? Yo'q bo'lsa – zaxira hisob:
     // rad etilgan va rad etgan xodimi yo'q yozuv = avto-rad etilgan.
-    $hasAutoCol = (int) $pdo->query(
-        "SELECT COUNT(*) FROM information_schema.COLUMNS
-          WHERE TABLE_SCHEMA = DATABASE()
-            AND TABLE_NAME   = 'reservations'
-            AND COLUMN_NAME  = 'auto_rejected'"
-    )->fetchColumn() > 0;
-
-    $autoExpr = $hasAutoCol
+    $autoExpr = columnExists($pdo, 'reservations', 'auto_rejected')
         ? 'r.auto_rejected'
         : "(r.status = 'rad_etildi' AND r.rejected_by IS NULL)";
 
+    // Xodimlar izi uchun uchta alohida JOIN: tasdiqlagan (staff), qabul qilgan (returner), rad etgan (rejecter)
     $sql = "SELECT r.id, r.reserved_date, r.created_at, r.pickup_days, r.pickup_deadline, r.status,
-                   r.picked_up_at, r.returned_at, r.is_offline, r.served_by, r.returned_by, r.rejected_by,
+                   r.picked_up_at, r.due_date, r.loan_days, r.returned_at, r.is_offline,
+                   r.served_by, r.returned_by, r.rejected_by,
                    r.pickup_code, {$autoExpr} AS auto_rejected,
                    u.name AS user_name, u.email AS user_email,
                    u.faculty, u.direction, u.group_name, u.hemis_id,
                    b.id AS book_id, b.title AS book_title, b.author AS book_author,
                    b.genre AS book_genre, b.category AS book_category, b.cover_image,
-                   staff.name AS staff_name
+                   staff.name    AS staff_name,
+                   returner.name AS returner_name,
+                   rejecter.name AS rejecter_name
             FROM reservations r
             JOIN users u ON u.id = r.user_id
             JOIN books b ON b.id = r.book_id
-            LEFT JOIN users staff ON r.served_by = staff.id
+            LEFT JOIN users staff    ON r.served_by   = staff.id
+            LEFT JOIN users returner ON r.returned_by = returner.id
+            LEFT JOIN users rejecter ON r.rejected_by = rejecter.id
             WHERE 1 = 1";
     $params = [];
 
@@ -433,7 +500,7 @@ try {
     $reservations = $stmt->fetchAll();
 } catch (PDOException $ex) {
     error_log('[Kutubxona-ARM] Admin panelda xatolik: ' . $ex->getMessage());
-    setFlash('error', "Ma'lumotlarni yuklashda xatolik yuz berdi. (008-migratsiya ishga tushirilganmi?)");
+    setFlash('error', "Ma'lumotlarni yuklashda xatolik yuz berdi. (migrations/010_tuzatishlar.sql ishga tushirilganmi?)");
 }
 
 $tabs = [
@@ -477,9 +544,15 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 </div>
 
-<!-- ====== TALABA KODI BO'YICHA TEZKOR QIDIRUV ====== -->
+<!-- ====== TALABA KODI BO'YICHA TEZKOR QIDIRUV ======
+     Boshqa filtrlar (holat, HEMIS ID, fakultet, guruh) yashirin maydonlar bilan saqlanadi. -->
 <form method="get" action="<?= e(url('admin/index.php')) ?>" id="codeSearchForm"
       class="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3 flex flex-col sm:flex-row sm:items-center gap-2">
+    <input type="hidden" name="status" value="<?= e($filters['status']) ?>">
+    <input type="hidden" name="q" value="<?= e($filters['q']) ?>">
+    <input type="hidden" name="faculty" value="<?= e($filters['faculty']) ?>">
+    <input type="hidden" name="group" value="<?= e($filters['group']) ?>">
+
     <label for="codeInput" class="text-sm font-semibold text-amber-900 shrink-0">🔑 Talaba kodi:</label>
 
     <input type="text" id="codeInput" name="code" value="<?= e($filters['code']) ?>"
@@ -494,7 +567,7 @@ require_once __DIR__ . '/../includes/header.php';
     </button>
 
     <?php if ($filters['code'] !== ''): ?>
-        <a href="<?= e(url('admin/index.php')) ?>"
+        <a href="<?= e(url(adminUrl(['status' => $filters['status'], 'q' => $filters['q'], 'faculty' => $filters['faculty'], 'group' => $filters['group'], 'code' => '']))) ?>"
            class="border border-slate-300 bg-white hover:bg-slate-50 rounded-md px-4 py-2 text-sm text-center">
             Tozalash
         </a>
@@ -570,7 +643,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <th class="px-2.5 py-3 font-semibold">Fakultet va guruh</th>
                     <th class="px-2.5 py-3 font-semibold">Kitob</th>
                     <th class="px-2.5 py-3 font-semibold">Band qilingan / Qolgan vaqt</th>
-                    <th class="px-2.5 py-3 font-semibold">Berilgan / Xodim</th>
+                    <th class="px-2.5 py-3 font-semibold">Berilgan / Muddat / Xodimlar</th>
                     <th class="px-2.5 py-3 font-semibold whitespace-nowrap">Holati</th>
                     <th class="px-2.5 py-3 font-semibold text-right">Harakatlar</th>
                 </tr>
@@ -604,25 +677,36 @@ require_once __DIR__ . '/../includes/header.php';
                             <?php renderBookButton($r); ?>
                         </td>
 
-                        <!-- 5) Band vaqti + real-time taymer -->
+                        <!-- 5) Band vaqti + real-time taymer (kutilmoqda: olib ketishga) -->
                         <td class="px-2.5 py-3">
                             <div class="font-bold whitespace-nowrap"><?= e(formatDateTime((string) $r['created_at'])) ?></div>
                             <?php if (!empty($r['pickup_deadline'])): ?>
                                 <div class="text-slate-600 mt-0.5"><?= (int) $r['pickup_days'] ?> kun · <?= e(formatDateTime((string) $r['pickup_deadline'])) ?> gacha</div>
                             <?php endif; ?>
-                            <?php renderTimer($r); ?>
+                            <?php if ($r['status'] === 'kutilmoqda'): ?>
+                                <?php renderTimer($r); ?>
+                            <?php endif; ?>
                         </td>
 
-                        <!-- 6) Olib ketilgan sana + xodim ismi -->
+                        <!-- 6) Olib ketilgan sana + qaytarish muddati (taymer) + xodimlar izi -->
                         <td class="px-2.5 py-3">
                             <?php if (!empty($r['picked_up_at'])): ?>
                                 <div class="text-green-700 whitespace-nowrap"><b><?= e(formatDateTime((string) $r['picked_up_at'])) ?></b></div>
                             <?php else: ?>
                                 <span class="text-slate-400">—</span>
                             <?php endif; ?>
-                            <?php if (!empty($r['staff_name'])): ?>
-                                <div class="text-slate-700 mt-0.5 break-words"><?= e($r['staff_name']) ?></div>
+
+                            <?php if (!empty($r['due_date']) && in_array($r['status'], ['tasdiqlandi', 'berilgan'], true)): ?>
+                                <div class="text-slate-600 mt-0.5">
+                                    <?= (int) ($r['loan_days'] ?? 0) > 0 ? (int) $r['loan_days'] . ' kunga · ' : '' ?>
+                                    <span class="whitespace-nowrap"><?= e(formatDateTime((string) $r['due_date'])) ?> gacha</span>
+                                </div>
+                                <?php renderTimer($r); ?>
                             <?php endif; ?>
+
+                            <!-- Tasdiqlagan / qabul qilgan / rad etgan xodim – alohida qatorlarda -->
+                            <?php renderStaffTrail($r); ?>
+
                             <?php if ((int) $r['is_offline'] === 1): ?>
                                 <span class="inline-block mt-1 px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-medium">Offlayn</span>
                             <?php endif; ?>
@@ -680,7 +764,9 @@ require_once __DIR__ . '/../includes/header.php';
                             <?php if (!empty($r['pickup_deadline'])): ?>
                                 <span class="text-slate-600">· <?= (int) $r['pickup_days'] ?> kun (<?= e(formatDateTime((string) $r['pickup_deadline'])) ?> gacha)</span>
                             <?php endif; ?>
-                            <div><?php renderTimer($r); ?></div>
+                            <?php if ($r['status'] === 'kutilmoqda'): ?>
+                                <div><?php renderTimer($r); ?></div>
+                            <?php endif; ?>
                         </dd>
                     </div>
                     <?php if (!empty($r['picked_up_at'])): ?>
@@ -689,12 +775,19 @@ require_once __DIR__ . '/../includes/header.php';
                             <dd class="font-semibold text-green-700"><?= e(formatDateTime((string) $r['picked_up_at'])) ?></dd>
                         </div>
                     <?php endif; ?>
-                    <?php if (!empty($r['staff_name'])): ?>
+                    <?php if (!empty($r['due_date']) && in_array($r['status'], ['tasdiqlandi', 'berilgan'], true)): ?>
                         <div>
-                            <dt class="text-slate-500">Xodim</dt>
-                            <dd class="font-semibold break-words"><?= e($r['staff_name']) ?></dd>
+                            <dt class="text-slate-500">Qaytarish muddati</dt>
+                            <dd class="font-semibold">
+                                <?= e(formatDateTime((string) $r['due_date'])) ?>
+                                <div><?php renderTimer($r); ?></div>
+                            </dd>
                         </div>
                     <?php endif; ?>
+                    <div class="col-span-2">
+                        <dt class="text-slate-500">Xodimlar</dt>
+                        <dd><?php renderStaffTrail($r); ?></dd>
+                    </div>
                     <?php if ((int) $r['is_offline'] === 1): ?>
                         <div class="col-span-2">
                             <span class="inline-block px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-medium">Offlayn berilgan</span>
@@ -756,13 +849,14 @@ require_once __DIR__ . '/../includes/header.php';
                 </div>
             </div>
 
-            <!-- Sanalar va xodim -->
+            <!-- Sanalar va xodimlar -->
             <dl class="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                 <div class="col-span-2"><dt class="text-slate-500">Holati</dt><dd id="omStatus" class="font-semibold"></dd></div>
                 <div><dt class="text-slate-500">Band qilingan</dt><dd id="omReserved" class="font-semibold"></dd></div>
                 <div><dt class="text-slate-500">Olib ketilgan</dt><dd id="omPicked" class="font-semibold"></dd></div>
+                <div><dt class="text-slate-500">Qaytarish muddati</dt><dd id="omDue" class="font-semibold"></dd></div>
                 <div><dt class="text-slate-500">Qaytarilgan</dt><dd id="omReturned" class="font-semibold"></dd></div>
-                <div><dt class="text-slate-500">Mas'ul xodim</dt><dd id="omStaff" class="font-semibold break-words"></dd></div>
+                <div class="col-span-2"><dt class="text-slate-500">Mas'ul xodimlar</dt><dd id="omStaff" class="font-semibold break-words"></dd></div>
             </dl>
         </div>
     </div>
@@ -792,8 +886,9 @@ require_once __DIR__ . '/../includes/header.php';
             var left = parseInt(node.getAttribute('data-deadline-ts'), 10) - now;
 
             if (left <= 0) {
+                // Matn serverdan keladi: olib ketish uchun "Muddati o'tgan", qaytarish uchun "Kechikkan"
                 node.className = URGENT;
-                node.textContent = "⚠️ Muddati o'tgan";
+                node.textContent = '⚠️ ' + (node.getAttribute('data-expired-text') || "Muddati o'tgan");
                 return;
             }
 
@@ -891,12 +986,13 @@ require_once __DIR__ . '/../includes/header.php';
         $('omCodeWrap').classList.toggle('hidden', !d.code);
         $('omCode').textContent = d.code || '';
 
-        // Holat, sanalar, xodim
+        // Holat, sanalar, xodimlar
         setText('omStatus', d.status);
         setText('omReserved', d.reserved);
         setText('omPicked', d.picked);
+        setText('omDue', d.due);
         setText('omReturned', d.returned);
-        setText('omStaff', d.staff ? d.staff : (d.offline ? '' : ''));
+        setText('omStaff', d.staff);
 
         // Avto-rad etilgan ogohlantirishi
         $('omAuto').classList.toggle('hidden', !d.auto);

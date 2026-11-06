@@ -47,7 +47,7 @@ if ($user !== null && $user['role'] === 'talaba') {
     $stmt = $pdo->prepare(
         "SELECT COUNT(*) FROM reservations
          WHERE user_id = :user_id AND book_id = :book_id
-           AND status IN ('kutilmoqda', 'tasdiqlandi')"
+           AND status IN ('kutilmoqda', 'tasdiqlandi', 'berilgan')"
     );
     $stmt->execute([':user_id' => $user['id'], ':book_id' => $book['id']]);
     $alreadyBooked = (int) $stmt->fetchColumn() > 0;

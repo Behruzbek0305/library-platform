@@ -319,13 +319,19 @@ function statusBadge(string $status, ?string $deadline = null, ?string $dueDate 
     }
 
     // "Berilgan": muddat o'tsa kechikish belgisi chiqadi, lekin kitob avtomatik "qaytarildi" bo'lmaydi
-    if ($status === 'berilgan') {
+    // DIQQAT: tizimda kitob qo'lga berilganda holat "tasdiqlandi" bo'ladi (onlayn tasdiqlash ham,
+    // offlayn berish ham), shuning uchun kechikish belgisi ikkala holat uchun ishlaydi.
+    if ($status === 'berilgan' || $status === 'tasdiqlandi') {
         $overdue = $dueDate !== null && $dueDate !== '' && strtotime($dueDate) < time();
         if ($overdue) {
-            return '<span class="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">⏰ Berilgan (muddat o\'tdi)</span>'
+            $label = $status === 'berilgan' ? 'Berilgan' : 'Tasdiqlandi';
+            return '<span class="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">⏰ ' . $label . ' (muddat o\'tdi)</span>'
                  . '<span class="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">Kechikkan</span>';
         }
-        return '<span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Berilgan</span>';
+        if ($status === 'berilgan') {
+            return '<span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Berilgan</span>';
+        }
+        // "tasdiqlandi" (muddati o'tmagan) – pastdagi match ishlaydi
     }
 
     return match ($status) {
@@ -382,6 +388,59 @@ function renderStaffTrail(array $r): void
     }
 }
 
+/**
+ * Xodimlar izini BITTA matn qilib qaytaradi (oyna/modal va data-atributlar uchun).
+ * Misol: "Tasdiqlagan: Aliyev A. · Qabul qilgan: Valiyev V."
+ */
+function staffTrailText(array $r): string
+{
+    $status    = (string) ($r['status'] ?? '');
+    $approver  = trim((string) ($r['staff_name'] ?? ''));
+    $returner  = trim((string) ($r['returner_name'] ?? ''));
+    $rejecter  = trim((string) ($r['rejecter_name'] ?? ''));
+    $isOffline = (int) ($r['is_offline'] ?? 0) === 1;
+    $parts     = [];
+
+    if ($approver !== '') {
+        $parts[] = ($isOffline ? 'Bergan: ' : 'Tasdiqlagan: ') . $approver;
+    } elseif ($status === 'kutilmoqda') {
+        $parts[] = 'Kutilmoqda';
+    }
+
+    if ($status === 'qaytarildi' && $returner !== '') {
+        $parts[] = 'Qabul qilgan: ' . $returner;
+    }
+
+    if ($status === 'rad_etildi') {
+        $parts[] = $rejecter !== '' ? 'Rad etgan: ' . $rejecter : "Avtomatik (muddati o'tgan)";
+    }
+
+    return implode(' · ', $parts);
+}
+
+/**
+ * Jadvalda ustun bormi? (migratsiya qilinmagan eski bazalarda sayt yiqilib
+ * qolmasligi uchun). Natija bir so'rov ichida keshlanadi.
+ */
+function columnExists(PDO $pdo, string $table, string $column): bool
+{
+    static $cache = [];
+    $key = $table . '.' . $column;
+
+    if (!isset($cache[$key])) {
+        $stmt = $pdo->prepare(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME   = :t
+                AND COLUMN_NAME  = :c'
+        );
+        $stmt->execute([':t' => $table, ':c' => $column]);
+        $cache[$key] = (int) $stmt->fetchColumn() > 0;
+    }
+
+    return $cache[$key];
+}
+
 // ------------------------------------------------------------
 // 5. OLIB KETISH MUDDATI (1, 2 yoki 3 kun) VA AVTOMATIK RAD ETISH
 //    OFFLINE_DAY_OPTIONS – kutubxonachi uchun "Offlayn registratsiya"
@@ -414,9 +473,10 @@ function expireOverdueReservations(PDO $pdo): int
             "SELECT id, book_id FROM reservations
              WHERE status = 'kutilmoqda'
                AND pickup_deadline IS NOT NULL
-               AND pickup_deadline < NOW()"
+               AND pickup_deadline < :now"
         );
-        $stmt->execute();
+        // Vaqt PHP'dan (Asia/Tashkent) olinadi – pickup_deadline ham shunday yozilgan
+        $stmt->execute([':now' => date('Y-m-d H:i:s')]);
         $expired = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         $count = 0;
@@ -625,7 +685,7 @@ function renderOfflineIssueForm(int $bookId, string $variant = 'modal', string $
                 Talabaning HEMIS ID si
             </label>
             <input type="text" id="off_hemis_<?= e($variant) ?>" name="hemis_id" required
-                    data-digits-only data-hemis-length='12'
+                    data-digits-only data-hemis-length="<?= (int) HEMIS_ID_LENGTH ?>"
                     inputmode="numeric" autocomplete="off"
                    placeholder="Masalan: 123456789012" class="<?= $fieldClass ?>">
             <p class="text-xs text-slate-500">Faqat raqam.</p>
@@ -765,7 +825,9 @@ function renderCodeBadge(?string $code, string $status): void
     <?php
 }
 
-// Global $pdo mavjud bo'lsa, muddati o'tganlarni avtomatik tozalaymiz
-if (isset($pdo) && $pdo instanceof PDO) {
+// Global $pdo mavjud bo'lsa, muddati o'tganlarni avtomatik tozalaymiz.
+// CLI (cron skripti o'zi chaqiradi va sonini to'g'ri chiqaradi) va search.php
+// (har bir tugma bosilishida ortiqcha yozuv so'rovi ketmasligi uchun) bundan mustasno.
+if (PHP_SAPI !== 'cli' && !defined('SKIP_AUTO_EXPIRE') && isset($pdo) && $pdo instanceof PDO) {
     expireOverdueReservations($pdo);
 }

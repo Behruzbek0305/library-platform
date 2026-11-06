@@ -14,6 +14,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/student_helpers.php';
+require_once __DIR__ . '/includes/book_helpers.php';   // columnExists()
 
 // Allaqachon tizimga kirgan bo'lsa, bu sahifa kerak emas
 if (isLoggedIn()) {
@@ -62,11 +63,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // 5) Xatolik bo'lmasa – bazaga yozamiz
         if (!$errors) {
             try {
+                // ------------------------------------------------------------
+                // OFFLAYN KIRITILGAN AKKAUNTNI "DA'VO QILISH"
+                // Kutubxonachi talabani offlayn berishda akkaunt yaratadi (password_set = 0,
+                // parolini hech kim bilmaydi). Talaba shu email VA HEMIS ID bilan ro'yxatdan
+                // o'tsa, yangi akkaunt ochilmaydi – mavjud akkauntga parol o'rnatiladi.
+                // ------------------------------------------------------------
+                $pending = [];
+                if (columnExists($pdo, 'users', 'password_set')) {
+                    $stmtP = $pdo->prepare(
+                        "SELECT id, email, hemis_id FROM users
+                         WHERE role = 'talaba' AND password_set = 0
+                           AND (email = :email OR hemis_id = :hemis)"
+                    );
+                    $stmtP->execute([':email' => $email, ':hemis' => $form['hemis_id']]);
+                    $pending = $stmtP->fetchAll();
+                }
+
+                $claim = null;
+                foreach ($pending as $row) {
+                    // Ikkala ma'lumot ham to'liq mos kelishi shart
+                    if ($row['email'] === $email && (string) $row['hemis_id'] === $form['hemis_id']) {
+                        $claim = $row;
+                        break;
+                    }
+                }
+
+                if ($claim !== null) {
+                    $upd = $pdo->prepare(
+                        "UPDATE users
+                         SET name = :name, faculty = :faculty, direction = :direction,
+                             group_name = :group_name, password = :password, password_set = 1
+                         WHERE id = :id AND role = 'talaba' AND password_set = 0"
+                    );
+                    $upd->execute([
+                        ':name'       => $form['name'],
+                        ':faculty'    => $form['faculty'],
+                        ':direction'  => $form['direction'],
+                        ':group_name' => $form['group_name'],
+                        ':password'   => password_hash($password, PASSWORD_DEFAULT),
+                        ':id'         => (int) $claim['id'],
+                    ]);
+
+                    loginUser((int) $claim['id']);
+                    setFlash('success', 'Xush kelibsiz, ' . $form['name'] . '! Kutubxonachi kiritgan akkauntingizga parol o\'rnatildi.');
+                    redirect('index.php');
+                }
+
                 // Bu email avval ro'yxatdan o'tganmi? (Prepared statement)
                 $check = $pdo->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
                 $check->execute([':email' => $email]);
 
-                if ($check->fetch()) {
+                if ($pending) {
+                    // Email yoki HEMIS ID kutubxonachi kiritgan akkauntga tegishli, lekin ikkalasi mos emas
+                    $errors[] = "Bu email yoki HEMIS ID kutubxonachi tomonidan oldin kiritilgan. "
+                              . "Akkauntingizni faollashtirish uchun kutubxonachiga aytgan email va HEMIS ID ni aynan bir xil kiriting.";
+                } elseif ($check->fetch()) {
                     $errors[] = "Bu email bilan allaqachon ro'yxatdan o'tilgan.";
                 } elseif (hemisIdTaken($pdo, $form['hemis_id'])) {
                     $errors[] = "Bu HEMIS ID bilan allaqachon ro'yxatdan o'tilgan.";

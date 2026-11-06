@@ -83,6 +83,10 @@ $hasBookModalJs = is_readable(__DIR__ . '/../assets/js/book-modal.js');
                         <a href="<?= e(url('register.php')) ?>" class="text-blue-600 hover:underline">ro'yxatdan o'ting</a>.
                     </p>
 
+                    <?php if ($modalRole === 'admin'): ?>
+                    <!-- Offlayn berish bloklari faqat kutubxonachi uchun chiziladi
+                         (talaba va mehmon sahifasiga forma HTML'i umuman tushmaydi).
+                         Server tomonda baribir requireAdmin() tekshiradi. -->
                     <!-- ====== Kutubxonachi: avvalgi kulrang "Faqat talabalar band qila oladi"
                          tugmasi o'rniga yashil "Offlayn Registratsiya qilish" tugmasi.
                          data-offline-endpoint – forma qayerga POST bo'lishini JS bilib olishi
@@ -183,6 +187,8 @@ $hasBookModalJs = is_readable(__DIR__ . '/../assets/js/book-modal.js');
                             </button>
                         </form>
                     </div>
+
+                    <?php endif; ?>
 
                     <!-- Talaba: allaqachon band qilgan -->
                     <p data-state="booked"

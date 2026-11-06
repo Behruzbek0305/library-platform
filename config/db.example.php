@@ -30,6 +30,11 @@ define('DB_PASS', 'PAROLNI_SHU_YERGA_YOZING');                 // Baza paroli (X
 define('DB_CHARSET', 'utf8mb4');       // Kodirovka (o'zbek harflari va emoji uchun)
 
 // ------------------------------------------------------------
+// 1.1. PHP VAQT ZONASI (functions.php ham shuni o'rnatadi; CLI skriptlar uchun shu yerda ham)
+// ------------------------------------------------------------
+date_default_timezone_set('Asia/Tashkent');
+
+// ------------------------------------------------------------
 // 2. DSN (ulanish manzili) VA PDO SOZLAMALARI
 // ------------------------------------------------------------
 $dsn = 'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=' . DB_CHARSET;
@@ -41,6 +46,12 @@ $options = [
     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     // Haqiqiy prepared statements (emulyatsiya o'chirilgan) – SQL Injection'dan yaxshiroq himoya
     PDO::ATTR_EMULATE_PREPARES   => false,
+    // VAQT ZONASI: MySQL ham O'zbekiston vaqti (UTC+5) bilan ishlasin.
+    // PHP sanalarni Asia/Tashkent bo'yicha yozadi, lekin MySQL NOW() va TIMESTAMP
+    // ustunlari (created_at) server zonasida (ko'pincha UTC) ishlaydi – natijada
+    // muddatlar 5 soatga siljib ketardi. '+05:00' tz-jadvallarsiz ham ishlaydi
+    // (O'zbekistonda yozgi/qishki vaqt o'tishi yo'q).
+    PDO::MYSQL_ATTR_INIT_COMMAND => "SET time_zone = '+05:00'",
 ];
 
 // ------------------------------------------------------------
