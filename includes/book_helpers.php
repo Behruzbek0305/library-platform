@@ -687,7 +687,7 @@ function renderOfflineIssueForm(int $bookId, string $variant = 'modal', string $
             <input type="text" id="off_hemis_<?= e($variant) ?>" name="hemis_id" required
                     data-digits-only data-hemis-length="<?= (int) HEMIS_ID_LENGTH ?>"
                     inputmode="numeric" autocomplete="off"
-                   placeholder="Masalan: 123456789012" class="<?= $fieldClass ?>">
+                    class="<?= $fieldClass ?>">
             <p class="text-xs text-slate-500">Faqat raqam.</p>
         </div>
 
@@ -698,7 +698,7 @@ function renderOfflineIssueForm(int $bookId, string $variant = 'modal', string $
                 </label>
                 <input type="text" id="off_name_<?= e($variant) ?>" name="student_name" required
                        maxlength="100" autocomplete="off"
-                       placeholder="Karimov Aziz Bahodirovich" class="<?= $fieldClass ?>">
+                        class="<?= $fieldClass ?>">
             </div>
 
             <div class="space-y-1">
@@ -707,7 +707,7 @@ function renderOfflineIssueForm(int $bookId, string $variant = 'modal', string $
                 </label>
                 <input type="email" id="off_email_<?= e($variant) ?>" name="student_email" required
                        maxlength="150" autocomplete="off"
-                       placeholder="talaba@universitet.uz" class="<?= $fieldClass ?>">
+                       class="<?= $fieldClass ?>">
             </div>
 
             <div class="space-y-1">
@@ -716,7 +716,7 @@ function renderOfflineIssueForm(int $bookId, string $variant = 'modal', string $
                 </label>
                 <input type="text" id="off_faculty_<?= e($variant) ?>" name="faculty" required
                        maxlength="150" autocomplete="off"
-                       placeholder="Axborot texnologiyalari" class="<?= $fieldClass ?>">
+                       class="<?= $fieldClass ?>">
             </div>
 
             <div class="space-y-1">
@@ -725,7 +725,7 @@ function renderOfflineIssueForm(int $bookId, string $variant = 'modal', string $
                 </label>
                 <input type="text" id="off_group_<?= e($variant) ?>" name="group_name" required
                        maxlength="30" autocomplete="off"
-                       placeholder="DI-21-01" class="<?= $fieldClass ?>">
+                       class="<?= $fieldClass ?>">
             </div>
         </div>
 

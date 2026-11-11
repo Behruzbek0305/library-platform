@@ -132,7 +132,7 @@ $hasBookModalJs = is_readable(__DIR__ . '/../assets/js/book-modal.js');
                                 <input type="text" id="off_hemis_modal" name="hemis_id" required
                                     inputmode="numeric" autocomplete="off"
                                     data-digits-only data-hemis-length="<?= (int) HEMIS_ID_LENGTH ?>"
-                                    placeholder="Masalan: 341231102185" class="<?= e(offlineFieldClass()) ?>">
+                                     class="<?= e(offlineFieldClass()) ?>">
                                 <p class="text-xs text-slate-500">Faqat raqam, aniq <?= (int) HEMIS_ID_LENGTH ?> ta.</p>
                             </div>
 
@@ -143,7 +143,7 @@ $hasBookModalJs = is_readable(__DIR__ . '/../assets/js/book-modal.js');
                                     </label>
                                     <input type="text" id="off_name_modal" name="student_name" required
                                            maxlength="100" autocomplete="off"
-                                           placeholder="Karimov Aziz Bahodirovich" class="<?= e(offlineFieldClass()) ?>">
+                                           class="<?= e(offlineFieldClass()) ?>">
                                 </div>
 
                                 <div class="space-y-1">
@@ -152,7 +152,7 @@ $hasBookModalJs = is_readable(__DIR__ . '/../assets/js/book-modal.js');
                                     </label>
                                     <input type="email" id="off_email_modal" name="student_email" required
                                            maxlength="150" autocomplete="off"
-                                           placeholder="talaba@universitet.uz" class="<?= e(offlineFieldClass()) ?>">
+                                        class="<?= e(offlineFieldClass()) ?>">
                                 </div>
 
                                 <div class="space-y-1">
@@ -161,7 +161,7 @@ $hasBookModalJs = is_readable(__DIR__ . '/../assets/js/book-modal.js');
                                     </label>
                                     <input type="text" id="off_faculty_modal" name="faculty" required
                                            maxlength="150" autocomplete="off"
-                                           placeholder="Axborot texnologiyalari" class="<?= e(offlineFieldClass()) ?>">
+                                           class="<?= e(offlineFieldClass()) ?>">
                                 </div>
 
                                 <div class="space-y-1">
@@ -170,7 +170,7 @@ $hasBookModalJs = is_readable(__DIR__ . '/../assets/js/book-modal.js');
                                     </label>
                                     <input type="text" id="off_group_modal" name="group_name" required
                                            maxlength="30" autocomplete="off"
-                                           placeholder="DI-21-01" class="<?= e(offlineFieldClass()) ?>">
+                                           class="<?= e(offlineFieldClass()) ?>">
                                 </div>
                             </div>
 

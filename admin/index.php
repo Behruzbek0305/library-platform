@@ -557,7 +557,6 @@ require_once __DIR__ . '/../includes/header.php';
 
     <input type="text" id="codeInput" name="code" value="<?= e($filters['code']) ?>"
            maxlength="7" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false"
-           placeholder="Masalan: K7M4P2"
            aria-label="Talaba kodi bo'yicha qidirish"
            class="border border-amber-300 rounded-md px-3 py-2 bg-white font-mono text-lg tracking-widest uppercase
                   focus:outline-none focus:ring-2 focus:ring-amber-300 sm:w-48">

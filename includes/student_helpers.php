@@ -162,19 +162,19 @@ function renderStudentFields(array $form): void
     ?>
     <label for="name" class="block text-sm font-bold mt-3 mb-1">To'liq ism (familiya, ism, sharif)</label>
     <input type="text" id="name" name="name" value="<?= e($form['name'] ?? '') ?>" required maxlength="100"
-           autocomplete="name" placeholder="Masalan: Karimov Aziz Bahodirovich" class="<?= $input ?>">
+           autocomplete="name"  class="<?= $input ?>">
 
     <label for="faculty" class="block text-sm font-bold mt-3 mb-1">Fakultet</label>
     <input type="text" id="faculty" name="faculty" value="<?= e($form['faculty'] ?? '') ?>" required maxlength="150"
-           placeholder="Masalan: Axborot texnologiyalari" class="<?= $input ?>">
+            class="<?= $input ?>">
 
     <label for="direction" class="block text-sm font-bold mt-3 mb-1">Ta'lim yo'nalishi</label>
     <input type="text" id="direction" name="direction" value="<?= e($form['direction'] ?? '') ?>" required maxlength="150"
-           placeholder="Masalan: Dasturiy injiniring" class="<?= $input ?>">
+          class="<?= $input ?>">
 
     <label for="group_name" class="block text-sm font-bold mt-3 mb-1">Guruh</label>
     <input type="text" id="group_name" name="group_name" value="<?= e($form['group_name'] ?? '') ?>" required maxlength="30"
-           placeholder="Masalan: DI-21-01" class="<?= $input ?>">
+           class="<?= $input ?>">
 
     <label for="hemis_id" class="block text-sm font-bold mt-3 mb-1">HEMIS ID</label>
     <!-- data-digits-only: hemis.js faqat raqamga ruxsat beradi (QIRQMAYDI).
@@ -183,7 +183,7 @@ function renderStudentFields(array $form): void
     <input type="text" id="hemis_id" name="hemis_id" value="<?= e($form['hemis_id'] ?? '') ?>" required
            inputmode="numeric" autocomplete="off" data-digits-only
            data-hemis-length="<?= (int) HEMIS_ID_LENGTH ?>"
-           placeholder="Masalan: 341231102185" class="<?= $input ?> font-mono select-text">
+           class="<?= $input ?> font-mono select-text">
     <p class="text-xs text-slate-500 mt-1">
         HEMIS ID ro'ppa-rosa <?= (int) HEMIS_ID_LENGTH ?> ta raqamdan iborat. U talabalik guvohnomangizda yoki HEMIS kabinetingizda yozilgan.
     </p>
