@@ -4,12 +4,18 @@
  *  Fayl: admin/staff.php – Xodimlar (kutubxonachilar) boshqaruvi
  *
  *  Imkoniyatlar:
- *    - xodimlar ro'yxati: bergan kitoblar soni va qaytarib olgan kitoblar soni
+ *    - xodimlar ro'yxati: bergan, qaytarib olgan va rad etgan soni
  *    - "Bloklash" (qizil) ↔ "Blokdan ochish" (sariq) tugmasi.
  *      Kasal bo'lgan xodim vaqtincha bloklanadi: tizimga kira olmaydi.
  *      Ishdan ketganlarni blokdan ochish shart emas.
- *    - xodim ismi bosilganda: kimlarga xizmat ko'rsatgani (kitob berilgan va
- *      qabul qilingan talabalar) oynada chiqadi (JSON: ?detail=ID)
+ *    - xodim ismi bosilganda: xodim bilan bog'liq BARCHA yozuvlar oynada chiqadi
+ *      (JSON: ?detail=ID):
+ *        * bergan / tasdiqlagan  (served_by)  + kitobning hozirgi holati:
+ *          Talabada / Kechikkan / Qaytarilgan
+ *        * qaytarib olgan        (returned_by)
+ *        * rad etgan             (rejected_by)
+ *      Oyna ichida filtr tugmalari bor (Hammasi, Bergan, Qaytarib olgan,
+ *      Rad etgan, Hozir qo'lida, Kechikkan).
  *
  *  O'chirish va parolni yangilash tugmalari YO'Q (so'rov bo'yicha olib tashlangan).
  *  Eslatma: avval migrations/011_xodim_bloklash.sql ni ishga tushiring.
@@ -30,6 +36,18 @@ $meId = (int) ($_SESSION['user_id'] ?? 0);
 function staffDate(?string $value): string
 {
     return ($value === null || $value === '') ? '' : date('d.m.Y H:i', strtotime($value));
+}
+
+/** Kechikish davomiyligini matnga aylantiradi: "6 kun 3 soat", "5 soat", "1 soatdan kam" */
+function lateText(int $seconds): string
+{
+    $days  = intdiv($seconds, 86400);
+    $hours = intdiv($seconds % 86400, 3600);
+
+    if ($days > 0) {
+        return $days . ' kun' . ($hours > 0 ? ' ' . $hours . ' soat' : '');
+    }
+    return $hours > 0 ? $hours . ' soat' : '1 soatdan kam';
 }
 
 // ------------------------------------------------------------
@@ -88,7 +106,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // ------------------------------------------------------------
 // 2. XODIM TAFSILOTI (JSON): ?detail=ID
-//    Xodim kimlarga kitob bergan va kimlardan qabul qilgan.
+//    Xodim bilan bog'liq hamma yozuv:
+//      - bergan / tasdiqlagan  (served_by)   + kitobning hozirgi holati
+//      - qaytarib olgan        (returned_by)
+//      - rad etgan             (rejected_by)
 // ------------------------------------------------------------
 if (isset($_GET['detail'])) {
     header('Content-Type: application/json; charset=utf-8');
@@ -112,21 +133,29 @@ if (isset($_GET['detail'])) {
             exit;
         }
 
-        // Har bir nomli parametr faqat BIR marta (ATTR_EMULATE_PREPARES = false)
+        // Har bir nomli parametr faqat BIR marta (ATTR_EMULATE_PREPARES = false),
+        // shuning uchun :a, :b va :c alohida nomlangan.
         $st = $pdo->prepare(
-            'SELECT r.served_by, r.returned_by, r.is_offline, r.created_at, r.picked_up_at, r.returned_at,
-                    u.name AS student, u.hemis_id, u.faculty, u.group_name, b.title AS book
+            'SELECT r.id, r.status, r.served_by, r.returned_by, r.rejected_by, r.is_offline,
+                    r.created_at, r.picked_up_at, r.due_date, r.returned_at,
+                    u.name AS student, u.hemis_id, u.faculty, u.group_name,
+                    b.title AS book,
+                    returner.name AS returner_name
              FROM reservations r
              JOIN users u ON u.id = r.user_id
              JOIN books b ON b.id = r.book_id
-             WHERE r.served_by = :a OR r.returned_by = :b
+             LEFT JOIN users returner ON returner.id = r.returned_by
+             WHERE r.served_by = :a OR r.returned_by = :b OR r.rejected_by = :c
              ORDER BY r.id DESC
-             LIMIT 300'
+             LIMIT 500'
         );
-        $st->execute([':a' => $staffId, ':b' => $staffId]);
+        $st->execute([':a' => $staffId, ':b' => $staffId, ':c' => $staffId]);
 
+        $now   = time();
         $items = [];
+
         foreach ($st->fetchAll() as $row) {
+            // Talaba va kitob haqidagi umumiy ma'lumot (hamma turdagi yozuvda bir xil)
             $base = [
                 'student' => (string) $row['student'],
                 'hemis'   => (string) ($row['hemis_id'] ?? ''),
@@ -134,25 +163,71 @@ if (isset($_GET['detail'])) {
                 'group'   => (string) ($row['group_name'] ?? ''),
                 'book'    => (string) $row['book'],
             ];
+            $status = (string) $row['status'];
 
-            // Xodim kitobni bergan / tasdiqlagan bo'lsa
+            // ---- 1) Xodim kitobni bergan / tasdiqlagan ----
             if ((int) $row['served_by'] === $staffId) {
                 $when = (string) ($row['picked_up_at'] ?: $row['created_at']);
+
+                // Kitobning hozirgi holati: qaytarilgan / kechikkan / talabada
+                $state = '';        // done | late | holding
+                $note  = '';        // qo'shimcha izoh matni
+
+                if ($status === 'qaytarildi') {
+                    $state = 'done';
+                    $note  = 'Qaytarilgan: ' . staffDate((string) ($row['returned_at'] ?? ''));
+                    if (!empty($row['returner_name'])) {
+                        $note .= ' · Qabul qilgan: ' . $row['returner_name'];
+                    }
+                } elseif (in_array($status, ['tasdiqlandi', 'berilgan'], true)) {
+                    $dueTs = !empty($row['due_date']) ? strtotime((string) $row['due_date']) : 0;
+
+                    if ($dueTs > 0 && $dueTs < $now) {
+                        $state = 'late';
+                        $note  = 'Muddati: ' . staffDate((string) $row['due_date'])
+                               . ' · ' . lateText($now - $dueTs) . ' kechikkan';
+                    } else {
+                        $state = 'holding';
+                        $note  = $dueTs > 0
+                            ? 'Qaytarish muddati: ' . staffDate((string) $row['due_date'])
+                            : 'Hozir talabada';
+                    }
+                }
+
                 $items[] = $base + [
-                    'role' => (int) $row['is_offline'] === 1 ? 'Offlayn bergan' : 'Tasdiqlagan',
-                    'kind' => 'given',
-                    'at'   => staffDate($when),
-                    'ts'   => strtotime($when),
+                    'role'  => (int) $row['is_offline'] === 1 ? 'Offlayn bergan' : 'Tasdiqlagan',
+                    'kind'  => 'given',
+                    'state' => $state,
+                    'note'  => $note,
+                    'at'    => staffDate($when),
+                    'ts'    => (int) strtotime($when),
                 ];
             }
-            // Xodim kitobni qaytarib olgan bo'lsa
+
+            // ---- 2) Xodim kitobni qaytarib olgan ----
             if ((int) $row['returned_by'] === $staffId) {
                 $when = (string) ($row['returned_at'] ?: $row['created_at']);
                 $items[] = $base + [
-                    'role' => 'Qabul qilgan',
-                    'kind' => 'returned',
-                    'at'   => staffDate($when),
-                    'ts'   => strtotime($when),
+                    'role'  => 'Qabul qilgan',
+                    'kind'  => 'returned',
+                    'state' => '',
+                    'note'  => '',
+                    'at'    => staffDate($when),
+                    'ts'    => (int) strtotime($when),
+                ];
+            }
+
+            // ---- 3) Xodim band qilishni rad etgan ----
+            // Rad etilgan vaqt bazada saqlanmaydi, shuning uchun band qilingan vaqt ko'rsatiladi.
+            if ((int) $row['rejected_by'] === $staffId) {
+                $when = (string) $row['created_at'];
+                $items[] = $base + [
+                    'role'  => 'Rad etgan',
+                    'kind'  => 'rejected',
+                    'state' => '',
+                    'note'  => 'Band qilingan vaqti: ' . staffDate($when),
+                    'at'    => staffDate($when),
+                    'ts'    => (int) strtotime($when),
                 ];
             }
         }
@@ -174,14 +249,15 @@ if (isset($_GET['detail'])) {
 }
 
 // ------------------------------------------------------------
-// 3. XODIMLAR RO'YXATI (bergan / qaytarib olgan kitoblar soni bilan)
+// 3. XODIMLAR RO'YXATI (bergan / qaytarib olgan / rad etgan soni bilan)
 // ------------------------------------------------------------
 $staffList = [];
 try {
     $staffList = $pdo->query(
         "SELECT u.id, u.name, u.email, u.is_blocked, u.blocked_at, u.created_at,
                 (SELECT COUNT(*) FROM reservations r WHERE r.served_by   = u.id) AS given_cnt,
-                (SELECT COUNT(*) FROM reservations r WHERE r.returned_by = u.id) AS returned_cnt
+                (SELECT COUNT(*) FROM reservations r WHERE r.returned_by = u.id) AS returned_cnt,
+                (SELECT COUNT(*) FROM reservations r WHERE r.rejected_by = u.id) AS rejected_cnt
          FROM users u
          WHERE u.role = 'admin'
          ORDER BY u.is_blocked ASC, u.name ASC, u.id ASC"
@@ -216,8 +292,11 @@ function renderStaffAction(array $s, int $meId, bool $full): void
     $color   = $blocked ? 'bg-amber-500 hover:bg-amber-600' : 'bg-red-600 hover:bg-red-700';
     $size    = $full ? 'w-full text-sm py-2' : 'text-xs px-3 py-1.5 whitespace-nowrap';
 
-    // Bloklashdan oldin tasdiq so'raladi
-    $onsubmit = $blocked ? '' : ' onsubmit="' . e('return confirm("«' . $s['name'] . '» bloklansinmi? U tizimga kira olmaydi.");') . '"';
+    // Bloklashdan oldin tasdiq so'raladi (matn json_encode bilan xavfsiz qo'yiladi)
+    $confirmText = '«' . $s['name'] . '» bloklansinmi? U tizimga kira olmaydi.';
+    $onsubmit    = $blocked
+        ? ''
+        : ' onsubmit="' . e('return confirm(' . json_encode($confirmText, JSON_UNESCAPED_UNICODE) . ');') . '"';
     ?>
     <form method="post" action="<?= e(url('admin/staff.php')) ?>"<?= $onsubmit ?>>
         <?= csrfField() ?>
@@ -241,7 +320,8 @@ require_once __DIR__ . '/../includes/header.php';
 </div>
 <p class="text-slate-500 text-sm mb-4">
     Kasal bo'lgan xodimni vaqtincha <b>bloklang</b> – u qaytguncha tizimga kira olmaydi.
-    Ishdan ketganlarni blokdan ochish shart emas. Xodim ismini bosing – kimlarga xizmat ko'rsatgani chiqadi.
+    Ishdan ketganlarni blokdan ochish shart emas. Xodim ismini bosing – kimlarga xizmat ko'rsatgani
+    (bergan, qaytarib olgan, rad etgan va kechikayotgan kitoblar) chiqadi.
 </p>
 
 <?php if (!$staffList): ?>
@@ -259,6 +339,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <th class="px-4 py-3 font-semibold">Xodim</th>
                     <th class="px-4 py-3 font-semibold text-center">Bergan kitoblar</th>
                     <th class="px-4 py-3 font-semibold text-center">Qaytarib olgan</th>
+                    <th class="px-4 py-3 font-semibold text-center">Rad etgan</th>
                     <th class="px-4 py-3 font-semibold">Holati</th>
                     <th class="px-4 py-3 font-semibold text-right">Harakatlar</th>
                 </tr>
@@ -284,6 +365,9 @@ require_once __DIR__ . '/../includes/header.php';
                         </td>
                         <td class="px-4 py-3 text-center">
                             <span class="px-2 py-0.5 rounded bg-slate-200 text-slate-700 font-semibold"><?= (int) $s['returned_cnt'] ?> ta</span>
+                        </td>
+                        <td class="px-4 py-3 text-center">
+                            <span class="px-2 py-0.5 rounded bg-red-100 text-red-700 font-semibold"><?= (int) $s['rejected_cnt'] ?> ta</span>
                         </td>
                         <td class="px-4 py-3"><?= staffStatusBadge($blocked) ?></td>
                         <td class="px-4 py-3">
@@ -311,9 +395,10 @@ require_once __DIR__ . '/../includes/header.php';
                     <div class="shrink-0"><?= staffStatusBadge($blocked) ?></div>
                 </div>
 
-                <dl class="mt-3 grid grid-cols-2 gap-3 text-xs">
-                    <div><dt class="text-slate-500">Bergan kitoblar</dt><dd class="font-semibold text-green-700"><?= (int) $s['given_cnt'] ?> ta</dd></div>
+                <dl class="mt-3 grid grid-cols-3 gap-3 text-xs">
+                    <div><dt class="text-slate-500">Bergan</dt><dd class="font-semibold text-green-700"><?= (int) $s['given_cnt'] ?> ta</dd></div>
                     <div><dt class="text-slate-500">Qaytarib olgan</dt><dd class="font-semibold"><?= (int) $s['returned_cnt'] ?> ta</dd></div>
+                    <div><dt class="text-slate-500">Rad etgan</dt><dd class="font-semibold text-red-700"><?= (int) $s['rejected_cnt'] ?> ta</dd></div>
                 </dl>
 
                 <div class="mt-3"><?php renderStaffAction($s, $meId, true); ?></div>
@@ -335,18 +420,27 @@ require_once __DIR__ . '/../includes/header.php';
         <h2 id="staffModalTitle" class="text-xl font-bold pr-10 break-words"></h2>
         <p id="staffModalEmail" class="text-xs text-slate-500 break-all"></p>
 
-        <p id="staffModalSummary" class="mt-3 text-sm text-slate-700"></p>
+        <!-- Filtr tugmalari (sonlarini JS yozadi) -->
+        <div id="staffModalFilters" class="hidden mt-3 flex flex-wrap gap-2">
+            <button type="button" data-staff-filter="all"      data-label="Hammasi"></button>
+            <button type="button" data-staff-filter="given"    data-label="Bergan"></button>
+            <button type="button" data-staff-filter="returned" data-label="Qaytarib olgan"></button>
+            <button type="button" data-staff-filter="rejected" data-label="Rad etgan"></button>
+            <button type="button" data-staff-filter="holding"  data-label="Hozir qo'lida"></button>
+            <button type="button" data-staff-filter="late"     data-label="Kechikkan"></button>
+        </div>
 
-        <!-- Yuklanmoqda / xato xabari -->
+        <!-- Yuklanmoqda / xato / bo'sh xabari -->
         <p id="staffModalMsg" class="hidden mt-4 text-sm text-slate-500"></p>
 
-        <!-- Xizmat ko'rsatilgan talabalar ro'yxati -->
+        <!-- Yozuvlar ro'yxati -->
         <div id="staffModalList" class="mt-4 space-y-2"></div>
     </div>
 </div>
 
 <!-- ====== XODIM MODALI (Vanilla JS) ======
      Ism bosilganda ?detail=ID dan JSON olinadi va ro'yxat chiziladi.
+     Filtr tugmalari ro'yxatni mijoz tomonda saralaydi.
      Esc, orqa fon yoki ✕ yopadi; Tab oyna ichida aylanadi. -->
 <script>
 (function () {
@@ -358,15 +452,22 @@ require_once __DIR__ . '/../includes/header.php';
 
     var titleEl   = document.getElementById('staffModalTitle');
     var emailEl   = document.getElementById('staffModalEmail');
-    var summaryEl = document.getElementById('staffModalSummary');
+    var filtersEl = document.getElementById('staffModalFilters');
     var msgEl     = document.getElementById('staffModalMsg');
     var listEl    = document.getElementById('staffModalList');
 
     var FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
     var DETAIL_URL = <?= json_encode(url('admin/staff.php'), JSON_UNESCAPED_SLASHES) ?>;
 
+    // Filtr tugmalarining faol / oddiy ko'rinishi (Tailwind sinflari)
+    var CHIP_BASE   = 'px-3 py-1 rounded-full text-xs border ';
+    var CHIP_ACTIVE = CHIP_BASE + 'bg-blue-600 text-white border-blue-600';
+    var CHIP_NORMAL = CHIP_BASE + 'bg-white border-slate-200 hover:border-blue-600';
+
     var lastFocus  = null;
-    var controller = null;   // eski so'rovni bekor qilish uchun
+    var controller = null;      // eski so'rovni bekor qilish uchun
+    var items      = [];        // serverdan kelgan yozuvlar
+    var filter     = 'all';     // hozirgi tanlangan filtr
 
     function isOpen() { return !modal.classList.contains('pointer-events-none'); }
 
@@ -383,32 +484,81 @@ require_once __DIR__ . '/../includes/header.php';
         msgEl.classList.remove('hidden');
     }
 
-    /** Server javobidan ro'yxatni chizadi */
-    function render(data) {
-        titleEl.textContent = data.name;
-        emailEl.textContent = data.email;
+    function hideMessage() {
+        msgEl.classList.add('hidden');
+    }
 
-        var given = 0, returned = 0;
-        data.items.forEach(function (it) { if (it.kind === 'given') { given++; } else { returned++; } });
-        summaryEl.textContent = 'Bergan: ' + given + ' ta · Qaytarib olgan: ' + returned + ' ta';
+    /** Yozuv tanlangan filtrga mos keladimi? */
+    function matches(it, f) {
+        switch (f) {
+            case 'given':    return it.kind === 'given';
+            case 'returned': return it.kind === 'returned';
+            case 'rejected': return it.kind === 'rejected';
+            case 'holding':  return it.kind === 'given' && (it.state === 'holding' || it.state === 'late');
+            case 'late':     return it.kind === 'given' && it.state === 'late';
+            default:         return true;
+        }
+    }
 
+    /** Filtr tugmalaridagi sonlarni yangilaydi va faolini belgilaydi */
+    function renderFilters() {
+        Array.prototype.forEach.call(filtersEl.querySelectorAll('[data-staff-filter]'), function (btn) {
+            var f     = btn.getAttribute('data-staff-filter');
+            var count = items.filter(function (it) { return matches(it, f); }).length;
+
+            btn.textContent = btn.getAttribute('data-label') + ' (' + count + ')';
+            btn.className   = (f === filter) ? CHIP_ACTIVE : CHIP_NORMAL;
+
+            // Kechikkan bor bo'lsa, tugma qizil nuqta bilan ajralib turadi
+            if (f === 'late' && count > 0 && f !== filter) {
+                btn.className = CHIP_BASE + 'bg-red-50 text-red-700 border-red-300 hover:border-red-600';
+            }
+        });
+    }
+
+    /** Kitob holati belgisi (faqat "bergan" yozuvlar uchun) */
+    function stateBadge(state) {
+        if (state === 'late')    { return el('span', 'shrink-0 text-xs px-2 py-0.5 rounded-full font-semibold bg-red-100 text-red-700', '⏰ Kechikkan'); }
+        if (state === 'holding') { return el('span', 'shrink-0 text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-800', '📖 Talabada'); }
+        if (state === 'done')    { return el('span', 'shrink-0 text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700', '✔ Qaytarilgan'); }
+        return null;
+    }
+
+    /** Rol belgisining ranglari */
+    function roleClass(kind) {
+        if (kind === 'given')    { return 'bg-green-100 text-green-700'; }
+        if (kind === 'rejected') { return 'bg-red-100 text-red-700'; }
+        return 'bg-slate-200 text-slate-700';
+    }
+
+    /** Tanlangan filtr bo'yicha ro'yxatni chizadi */
+    function renderList() {
         listEl.textContent = '';
 
-        if (!data.items.length) {
-            showMessage('Bu xodim hali hech kimga xizmat ko\'rsatmagan.');
+        var shown = items.filter(function (it) { return matches(it, filter); });
+
+        if (!shown.length) {
+            showMessage(items.length
+                ? 'Bu filtr bo\'yicha yozuv yo\'q.'
+                : 'Bu xodim hali hech kimga xizmat ko\'rsatmagan.');
             return;
         }
+        hideMessage();
 
-        data.items.forEach(function (it) {
-            var card = el('div', 'border border-slate-200 rounded-lg p-3 text-sm');
+        shown.forEach(function (it) {
+            // Kechikkan kitob kartochkasi qizil ramka bilan ajralib turadi
+            var border = it.state === 'late' ? 'border-red-300 bg-red-50/40' : 'border-slate-200';
+            var card   = el('div', 'border ' + border + ' rounded-lg p-3 text-sm');
 
-            // Yuqori qator: talaba FIO + rol belgisi
-            var top  = el('div', 'flex items-start justify-between gap-2');
+            // Yuqori qator: talaba FIO + belgilar (rol va kitob holati)
+            var top    = el('div', 'flex items-start justify-between gap-2');
             top.appendChild(el('div', 'font-bold break-words min-w-0', it.student));
-            top.appendChild(el('span',
-                'shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ' +
-                (it.kind === 'given' ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-700'),
-                it.role));
+
+            var badges = el('div', 'shrink-0 flex flex-col items-end gap-1');
+            badges.appendChild(el('span', 'text-xs px-2 py-0.5 rounded-full font-medium ' + roleClass(it.kind), it.role));
+            var sb = stateBadge(it.state);
+            if (sb) { badges.appendChild(sb); }
+            top.appendChild(badges);
             card.appendChild(top);
 
             // Talaba ma'lumotlari
@@ -422,8 +572,26 @@ require_once __DIR__ . '/../includes/header.php';
             card.appendChild(el('div', 'mt-1 text-slate-700 break-words', '📖 ' + it.book));
             card.appendChild(el('div', 'text-xs text-slate-500 mt-0.5', it.at));
 
+            // Qo'shimcha izoh: muddat, kechikish, kim qabul qilgani va hokazo
+            if (it.note) {
+                var noteCls = it.state === 'late' ? 'text-red-700 font-semibold' : 'text-slate-600';
+                card.appendChild(el('div', 'text-xs mt-0.5 ' + noteCls, it.note));
+            }
+
             listEl.appendChild(card);
         });
+    }
+
+    /** Server javobi kelgach: sarlavha, filtrlar va ro'yxatni chizadi */
+    function render(data) {
+        titleEl.textContent = data.name;
+        emailEl.textContent = data.email;
+        items  = data.items || [];
+        filter = 'all';
+
+        filtersEl.classList.toggle('hidden', !items.length);
+        renderFilters();
+        renderList();
     }
 
     function loadDetail(id) {
@@ -433,8 +601,9 @@ require_once __DIR__ . '/../includes/header.php';
         // Tozalab, "yuklanmoqda" ko'rsatamiz
         titleEl.textContent = '';
         emailEl.textContent = '';
-        summaryEl.textContent = '';
         listEl.textContent = '';
+        items = [];
+        filtersEl.classList.add('hidden');
         showMessage('Yuklanmoqda…');
 
         fetch(DETAIL_URL + '?detail=' + encodeURIComponent(id), {
@@ -447,7 +616,7 @@ require_once __DIR__ . '/../includes/header.php';
                 return res.json();
             })
             .then(function (data) {
-                msgEl.classList.add('hidden');
+                hideMessage();
                 render(data);
             })
             .catch(function (err) {
@@ -486,6 +655,15 @@ require_once __DIR__ . '/../includes/header.php';
         }
     });
 
+    // Filtr tugmasi bosilganda ro'yxat qayta chiziladi
+    filtersEl.addEventListener('click', function (event) {
+        var btn = event.target.closest('[data-staff-filter]');
+        if (!btn) { return; }
+        filter = btn.getAttribute('data-staff-filter');
+        renderFilters();
+        renderList();
+    });
+
     closeBtn.addEventListener('click', closeModal);
 
     // Qoraytirilgan fonga bosilsa yopiladi, oyna ichiga bosilsa – yo'q
@@ -504,12 +682,12 @@ require_once __DIR__ . '/../includes/header.php';
         }
 
         if (event.key === 'Tab') {
-            var items = Array.prototype.filter.call(modal.querySelectorAll(FOCUSABLE), function (n) {
+            var focusable = Array.prototype.filter.call(modal.querySelectorAll(FOCUSABLE), function (n) {
                 return n.offsetParent !== null;
             });
-            if (!items.length) { return; }
+            if (!focusable.length) { return; }
 
-            var first = items[0], last = items[items.length - 1];
+            var first = focusable[0], last = focusable[focusable.length - 1];
             if (event.shiftKey && document.activeElement === first) {
                 event.preventDefault(); last.focus();
             } else if (!event.shiftKey && document.activeElement === last) {
