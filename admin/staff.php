@@ -2,23 +2,27 @@
 /**
  * ============================================================
  *  Fayl: admin/staff.php – Xodimlar (kutubxonachilar) boshqaruvi
+ *  Faqat SUPERADMIN uchun.
  *
  *  Imkoniyatlar:
- *    - xodimlar ro'yxati: bergan, qaytarib olgan va rad etgan soni
+ *    - xodimlar ro'yxati: bergan, qaytarib olgan va rad etgan kitoblar soni
+ *    - "+ Xodim qo'shish": superadmin yangi kutubxonachi (role = 'admin') qo'shadi
+ *      (FIO, email, parol – parol password_hash() bilan saqlanadi)
  *    - "Bloklash" (qizil) ↔ "Blokdan ochish" (sariq) tugmasi.
  *      Kasal bo'lgan xodim vaqtincha bloklanadi: tizimga kira olmaydi.
  *      Ishdan ketganlarni blokdan ochish shart emas.
  *    - xodim ismi bosilganda: xodim bilan bog'liq BARCHA yozuvlar oynada chiqadi
  *      (JSON: ?detail=ID):
- *        * bergan / tasdiqlagan  (served_by)  + kitobning hozirgi holati:
+ *        * bergan / tasdiqlagan (served_by) + kitobning hozirgi holati:
  *          Talabada / Kechikkan / Qaytarilgan
- *        * qaytarib olgan        (returned_by)
- *        * rad etgan             (rejected_by)
+ *        * qaytarib olgan       (returned_by)
+ *        * rad etgan            (rejected_by) – aniq vaqt rejected_at da
  *      Oyna ichida filtr tugmalari bor (Hammasi, Bergan, Qaytarib olgan,
  *      Rad etgan, Hozir qo'lida, Kechikkan).
  *
- *  O'chirish va parolni yangilash tugmalari YO'Q (so'rov bo'yicha olib tashlangan).
- *  Eslatma: avval migrations/011_xodim_bloklash.sql ni ishga tushiring.
+ *  O'chirish va parolni yangilash tugmalari YO'Q (so'rov bo'yicha).
+ *  Eslatma: avval migrations/011_xodim_bloklash.sql va
+ *           migrations/012_rejected_at.sql ni ishga tushiring.
  * ============================================================
  */
 
@@ -27,7 +31,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/book_helpers.php';
 
-// Faqat superadmin kira oladi
+// Faqat Bosh admin (superadmin) kira oladi
 requireSuperAdmin();
 
 $meId = (int) ($_SESSION['user_id'] ?? 0);
@@ -51,7 +55,7 @@ function lateText(int $seconds): string
 }
 
 // ------------------------------------------------------------
-// 1. BLOKLASH / BLOKDAN OCHISH (POST + CSRF)
+// 1. POST AMALLARI: xodim qo'shish, bloklash, blokdan ochish (CSRF bilan)
 // ------------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
@@ -60,15 +64,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('admin/staff.php');
     }
 
+    $action = (string) ($_POST['action'] ?? '');
+
+    // ---------- 1.1. YANGI XODIM QO'SHISH ----------
+    if ($action === 'add') {
+        $newName  = trim((string) preg_replace('/\s+/u', ' ', (string) ($_POST['name'] ?? '')));
+        $newEmail = mb_strtolower(trim((string) ($_POST['email'] ?? '')));
+        $newPass  = (string) ($_POST['password'] ?? '');
+        $newPass2 = (string) ($_POST['password_confirm'] ?? '');
+
+        $addErrors = [];
+
+        if (mb_strlen($newName) < 3 || mb_strlen($newName) > 100) {
+            $addErrors[] = "Xodim FIO si 3 tadan 100 tagacha belgidan iborat bo'lsin.";
+        }
+        if (!filter_var($newEmail, FILTER_VALIDATE_EMAIL) || mb_strlen($newEmail) > 150) {
+            $addErrors[] = "Email manzili noto'g'ri kiritilgan.";
+        }
+        if (strlen($newPass) < 6 || strlen($newPass) > 72) {
+            $addErrors[] = "Parol 6 tadan 72 tagacha belgidan iborat bo'lsin.";
+        }
+        if ($newPass !== $newPass2) {
+            $addErrors[] = "Parol va uning takrori bir xil emas.";
+        }
+
+        if (!$addErrors) {
+            try {
+                // Email band emasligini tekshiramiz
+                $chk = $pdo->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
+                $chk->execute([':email' => $newEmail]);
+
+                if ($chk->fetch()) {
+                    $addErrors[] = "Bu email bilan akkaunt allaqachon mavjud.";
+                } else {
+                    // Parol xeshlanadi (ochiq saqlanmaydi), rol har doim 'admin' (kutubxonachi)
+                    $ins = $pdo->prepare(
+                        "INSERT INTO users (name, email, password, role)
+                         VALUES (:name, :email, :password, 'admin')"
+                    );
+                    $ins->execute([
+                        ':name'     => $newName,
+                        ':email'    => $newEmail,
+                        ':password' => password_hash($newPass, PASSWORD_DEFAULT),
+                    ]);
+
+                    setFlash('success', "Yangi xodim qo'shildi: {$newName}. U shu email va parol bilan tizimga kira oladi.");
+                    redirect('admin/staff.php');
+                }
+            } catch (PDOException $ex) {
+                // 23000 – UNIQUE cheklov (ikki kishi bir vaqtda bir xil email kiritsa)
+                if ((string) $ex->getCode() === '23000') {
+                    $addErrors[] = "Bu email bilan akkaunt allaqachon mavjud.";
+                } else {
+                    error_log('[Kutubxona-ARM] Xodim qo\'shishda xatolik: ' . $ex->getMessage());
+                    $addErrors[] = "Kutilmagan xatolik yuz berdi. Keyinroq urinib ko'ring.";
+                }
+            }
+        }
+
+        // Xatolik bo'lsa: xabarlar ko'rsatiladi, forma ochiq va to'ldirilgan holda qaytadi
+        foreach ($addErrors as $err) {
+            setFlash('error', $err);
+        }
+        $_SESSION['staff_add_old'] = ['name' => $newName, 'email' => $newEmail];
+        redirect('admin/staff.php?add=1');
+    }
+
+    // ---------- 1.2. BLOKLASH / BLOKDAN OCHISH ----------
     $targetId = filter_var($_POST['user_id'] ?? null, FILTER_VALIDATE_INT);
-    $action   = (string) ($_POST['action'] ?? '');
 
     if ($targetId === false || $targetId < 1 || !in_array($action, ['block', 'unblock'], true)) {
         setFlash('error', "Noto'g'ri so'rov.");
         redirect('admin/staff.php');
     }
 
-    // Kutubxonachi o'zini bloklay olmaydi (tizimdan chiqib qolmasligi uchun)
+    // O'zini bloklay olmaydi (tizimdan chiqib qolmasligi uchun)
     if ($action === 'block' && $targetId === $meId) {
         setFlash('error', "O'zingizni bloklab bo'lmaydi.");
         redirect('admin/staff.php');
@@ -107,9 +177,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // ------------------------------------------------------------
 // 2. XODIM TAFSILOTI (JSON): ?detail=ID
 //    Xodim bilan bog'liq hamma yozuv:
-//      - bergan / tasdiqlagan  (served_by)   + kitobning hozirgi holati
-//      - qaytarib olgan        (returned_by)
-//      - rad etgan             (rejected_by)
+//      - bergan / tasdiqlagan (served_by) + kitobning hozirgi holati
+//      - qaytarib olgan       (returned_by)
+//      - rad etgan            (rejected_by, vaqti rejected_at)
 // ------------------------------------------------------------
 if (isset($_GET['detail'])) {
     header('Content-Type: application/json; charset=utf-8');
@@ -195,12 +265,13 @@ if (isset($_GET['detail'])) {
                 }
 
                 $items[] = $base + [
-                    'role'  => (int) $row['is_offline'] === 1 ? 'Offlayn bergan' : 'Tasdiqlagan',
-                    'kind'  => 'given',
-                    'state' => $state,
-                    'note'  => $note,
-                    'at'    => staffDate($when),
-                    'ts'    => (int) strtotime($when),
+                    'role'    => (int) $row['is_offline'] === 1 ? 'Offlayn bergan' : 'Tasdiqlagan',
+                    'kind'    => 'given',
+                    'state'   => $state,
+                    'note'    => $note,
+                    'atLabel' => 'Berilgan: ',
+                    'at'      => staffDate($when),
+                    'ts'      => (int) strtotime($when),
                 ];
             }
 
@@ -208,12 +279,13 @@ if (isset($_GET['detail'])) {
             if ((int) $row['returned_by'] === $staffId) {
                 $when = (string) ($row['returned_at'] ?: $row['created_at']);
                 $items[] = $base + [
-                    'role'  => 'Qabul qilgan',
-                    'kind'  => 'returned',
-                    'state' => '',
-                    'note'  => '',
-                    'at'    => staffDate($when),
-                    'ts'    => (int) strtotime($when),
+                    'role'    => 'Qabul qilgan',
+                    'kind'    => 'returned',
+                    'state'   => '',
+                    'note'    => '',
+                    'atLabel' => 'Qabul qilingan: ',
+                    'at'      => staffDate($when),
+                    'ts'      => (int) strtotime($when),
                 ];
             }
 
@@ -222,20 +294,23 @@ if (isset($_GET['detail'])) {
             // 012-migratsiyadan oldingi eski yozuvlarda u yo'q: band qilingan vaqt ko'rsatiladi.
             if ((int) $row['rejected_by'] === $staffId) {
                 if (!empty($row['rejected_at'])) {
-                    $when = (string) $row['rejected_at'];
-                    $note = 'Band qilingan: ' . staffDate((string) $row['created_at']);
+                    $when    = (string) $row['rejected_at'];
+                    $atLabel = 'Rad etilgan: ';
+                    $note    = 'Band qilingan: ' . staffDate((string) $row['created_at']);
                 } else {
-                    $when = (string) $row['created_at'];
-                    $note = 'Band qilingan vaqti: ' . staffDate($when) . ' (aniq rad etilgan vaqt saqlanmagan)';
+                    $when    = (string) $row['created_at'];
+                    $atLabel = 'Band qilingan: ';
+                    $note    = 'Aniq rad etilgan vaqt saqlanmagan';
                 }
 
                 $items[] = $base + [
-                    'role'  => 'Rad etgan',
-                    'kind'  => 'rejected',
-                    'state' => '',
-                    'note'  => $note,
-                    'at'    => staffDate($when),
-                    'ts'    => (int) strtotime($when),
+                    'role'    => 'Rad etgan',
+                    'kind'    => 'rejected',
+                    'state'   => '',
+                    'note'    => $note,
+                    'atLabel' => $atLabel,
+                    'at'      => staffDate($when),
+                    'ts'      => (int) strtotime($when),
                 ];
             }
         }
@@ -257,7 +332,15 @@ if (isset($_GET['detail'])) {
 }
 
 // ------------------------------------------------------------
-// 3. XODIMLAR RO'YXATI (bergan / qaytarib olgan / rad etgan soni bilan)
+// 3. XODIM QO'SHISH FORMASI HOLATI
+//    Xatolik bo'lsa forma to'ldirilgan holda qaytadi (parol qaytarilmaydi).
+// ------------------------------------------------------------
+$addOld  = $_SESSION['staff_add_old'] ?? ['name' => '', 'email' => ''];
+unset($_SESSION['staff_add_old']);
+$showAdd = isset($_GET['add']);
+
+// ------------------------------------------------------------
+// 4. XODIMLAR RO'YXATI (bergan / qaytarib olgan / rad etgan soni bilan)
 // ------------------------------------------------------------
 $staffList = [];
 try {
@@ -316,16 +399,72 @@ function renderStaffAction(array $s, int $meId, bool $full): void
 }
 
 // ------------------------------------------------------------
-// 4. SAHIFANI CHIZISH
+// 5. SAHIFANI CHIZISH
 // ------------------------------------------------------------
 $pageTitle = 'Xodimlar';
 require_once __DIR__ . '/../includes/header.php';
+
+// Forma maydonlari uchun umumiy Tailwind sinflari
+$addInput = 'w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-300';
 ?>
 
 <div class="flex flex-wrap items-center justify-between gap-3 mb-2">
     <h1 class="text-2xl font-bold">Xodimlar (kutubxonachilar)</h1>
-    <a href="<?= e(url('admin/index.php')) ?>" class="text-blue-600 hover:underline text-sm">← Band qilishlarga qaytish</a>
+    <div class="flex items-center gap-3">
+        <!-- Yangi xodim qo'shish formasini ochadi -->
+        <button type="button" id="staffAddToggle"
+                class="bg-green-600 hover:bg-green-700 text-white font-semibold rounded-md px-4 py-2 text-sm">
+            + Xodim qo'shish
+        </button>
+        <a href="<?= e(url('admin/index.php')) ?>" class="text-blue-600 hover:underline text-sm">← Band qilishlarga qaytish</a>
+    </div>
 </div>
+
+<!-- ====== YANGI XODIM QO'SHISH FORMASI (tugma bosilganda ochiladi) ====== -->
+<div id="staffAddBox" class="<?= $showAdd ? '' : 'hidden' ?> bg-white border border-green-200 rounded-xl p-4 mb-4">
+    <h2 class="font-bold text-green-800 mb-3">Yangi xodim (kutubxonachi) qo'shish</h2>
+
+    <form method="post" action="<?= e(url('admin/staff.php')) ?>" autocomplete="off"
+          class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <?= csrfField() ?>
+        <input type="hidden" name="action" value="add">
+
+        <div>
+            <label for="add_name" class="block text-sm font-semibold mb-1">To'liq ism (FIO)</label>
+            <input type="text" id="add_name" name="name" required maxlength="100"
+                   value="<?= e($addOld['name']) ?>" class="<?= $addInput ?>">
+        </div>
+
+        <div>
+            <label for="add_email" class="block text-sm font-semibold mb-1">Email (kirish uchun login)</label>
+            <input type="email" id="add_email" name="email" required maxlength="150"
+                   value="<?= e($addOld['email']) ?>" class="<?= $addInput ?>">
+        </div>
+
+        <div>
+            <label for="add_pass" class="block text-sm font-semibold mb-1">Parol (kamida 6 belgi)</label>
+            <input type="password" id="add_pass" name="password" required minlength="6" maxlength="72"
+                   autocomplete="new-password" class="<?= $addInput ?>">
+        </div>
+
+        <div>
+            <label for="add_pass2" class="block text-sm font-semibold mb-1">Parolni takrorlang</label>
+            <input type="password" id="add_pass2" name="password_confirm" required minlength="6" maxlength="72"
+                   autocomplete="new-password" class="<?= $addInput ?>">
+        </div>
+
+        <div class="md:col-span-2 flex gap-2">
+            <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-semibold rounded-md px-5 py-2 text-sm">
+                Qo'shish
+            </button>
+            <button type="button" id="staffAddCancel"
+                    class="border border-slate-300 bg-white hover:bg-slate-50 rounded-md px-4 py-2 text-sm">
+                Bekor qilish
+            </button>
+        </div>
+    </form>
+</div>
+
 <p class="text-slate-500 text-sm mb-4">
     Kasal bo'lgan xodimni vaqtincha <b>bloklang</b> – u qaytguncha tizimga kira olmaydi.
     Ishdan ketganlarni blokdan ochish shart emas. Xodim ismini bosing – kimlarga xizmat ko'rsatgani
@@ -446,6 +585,31 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 </div>
 
+<!-- ====== XODIM QO'SHISH FORMASINI OCHISH / YOPISH ====== -->
+<script>
+(function () {
+    'use strict';
+
+    var toggle = document.getElementById('staffAddToggle');
+    var box    = document.getElementById('staffAddBox');
+    var cancel = document.getElementById('staffAddCancel');
+    if (!toggle || !box) { return; }
+
+    // Tugma: formani ko'rsatadi/yashiradi, ochilganda birinchi maydonga o'tadi
+    toggle.addEventListener('click', function () {
+        var open = box.classList.toggle('hidden') === false;
+        if (open) {
+            var first = document.getElementById('add_name');
+            if (first) { first.focus(); }
+        }
+    });
+
+    if (cancel) {
+        cancel.addEventListener('click', function () { box.classList.add('hidden'); });
+    }
+})();
+</script>
+
 <!-- ====== XODIM MODALI (Vanilla JS) ======
      Ism bosilganda ?detail=ID dan JSON olinadi va ro'yxat chiziladi.
      Filtr tugmalari ro'yxatni mijoz tomonda saralaydi.
@@ -471,6 +635,7 @@ require_once __DIR__ . '/../includes/header.php';
     var CHIP_BASE   = 'px-3 py-1 rounded-full text-xs border ';
     var CHIP_ACTIVE = CHIP_BASE + 'bg-blue-600 text-white border-blue-600';
     var CHIP_NORMAL = CHIP_BASE + 'bg-white border-slate-200 hover:border-blue-600';
+    var CHIP_LATE   = CHIP_BASE + 'bg-red-50 text-red-700 border-red-300 hover:border-red-600';
 
     var lastFocus  = null;
     var controller = null;      // eski so'rovni bekor qilish uchun
@@ -517,9 +682,9 @@ require_once __DIR__ . '/../includes/header.php';
             btn.textContent = btn.getAttribute('data-label') + ' (' + count + ')';
             btn.className   = (f === filter) ? CHIP_ACTIVE : CHIP_NORMAL;
 
-            // Kechikkan bor bo'lsa, tugma qizil nuqta bilan ajralib turadi
+            // Kechikkan bor bo'lsa, tugma qizil rangda ajralib turadi
             if (f === 'late' && count > 0 && f !== filter) {
-                btn.className = CHIP_BASE + 'bg-red-50 text-red-700 border-red-300 hover:border-red-600';
+                btn.className = CHIP_LATE;
             }
         });
     }
@@ -576,12 +741,11 @@ require_once __DIR__ . '/../includes/header.php';
             if (it.faculty) { info.push(it.faculty); }
             if (info.length) { card.appendChild(el('div', 'text-xs text-slate-500 mt-0.5 break-words', info.join(' · '))); }
 
-            // Kitob va vaqt
+            // Kitob
             card.appendChild(el('div', 'mt-1 text-slate-700 break-words', '📖 ' + it.book));
-            // Vaqt qatori: qaysi amal vaqti ekanini yozib ko'rsatamiz
-            var atLabels = { given: 'Berilgan: ', returned: 'Qabul qilingan: ', rejected: 'Rad etilgan: ' };
-            var atText   = (atLabels[it.kind] || '') + it.at;
-            card.appendChild(el('div', 'text-xs text-slate-500 mt-0.5', atText));
+
+            // Vaqt qatori: qaysi amal vaqti ekanini yorliq bilan ko'rsatamiz (yorliqni server beradi)
+            card.appendChild(el('div', 'text-xs text-slate-500 mt-0.5', (it.atLabel || '') + it.at));
 
             // Qo'shimcha izoh: muddat, kechikish, kim qabul qilgani va hokazo
             if (it.note) {
