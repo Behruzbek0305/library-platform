@@ -10,6 +10,13 @@
  *      ixcham yon panel (drawer) ochiladi, orqa fon qoraroq bo'ladi
  *  Yon panelning ishlashi: assets/js/menu.js
  *
+ *  YANGI: flash xabarlar (success / error / info) endi sahifa yangilanishini
+ *  kutmaydi – bir necha soniyadan keyin o'zi asta-sekin xiralashib yo'qoladi:
+ *    - muvaffaqiyat va ma'lumot xabarlari ~6 soniya, xatolar ~10 soniya
+ *    - sichqoncha ustida yoki tugma fokusda turganda vaqt to'xtaydi
+ *    - ✕ tugmasi bilan darhol yopish mumkin
+ *    - yo'qolganda pastdagi kontent birdan sakramaydi, silliq ko'tariladi
+ *
  *  Ishlatilishi (sahifada):
  *      $pageTitle = 'Katalog';
  *      require_once __DIR__ . '/includes/auth.php';
@@ -156,9 +163,90 @@ $flashColors = [
     <!-- ====== ASOSIY QISM ====== -->
     <main class="flex-1 w-full max-w-6xl mx-auto px-4 py-6">
 
-        <!-- Flash xabarlar (masalan: "Xush kelibsiz!") -->
-        <?php foreach (getFlashes() as $flash): ?>
-            <div class="mb-4 border rounded-md px-4 py-3 <?= e($flashColors[$flash['type']] ?? $flashColors['info']) ?>">
-                <?= e($flash['message']) ?>
+        <!-- Flash xabarlar (masalan: "Xush kelibsiz!").
+             data-flash – turi (success/error/info); pastdagi skript ularni vaqti bilan yo'qotadi.
+             Xatolar role="alert" (ekran o'qigichlar darhol o'qiydi), qolganlari role="status". -->
+        <?php $flashList = getFlashes(); ?>
+        <?php foreach ($flashList as $flash): ?>
+            <?php $flashType = isset($flashColors[$flash['type']]) ? (string) $flash['type'] : 'info'; ?>
+            <div data-flash="<?= e($flashType) ?>" role="<?= $flashType === 'error' ? 'alert' : 'status' ?>"
+                 class="mb-4 border rounded-md px-4 py-3 flex items-start justify-between gap-3 <?= e($flashColors[$flashType]) ?>">
+                <div class="min-w-0 break-words"><?= e($flash['message']) ?></div>
+                <button type="button" data-flash-close aria-label="Xabarni yopish"
+                        class="shrink-0 -my-1 -mr-1 rounded px-2 py-0.5 text-lg leading-none opacity-60 hover:opacity-100">✕</button>
             </div>
         <?php endforeach; ?>
+
+        <?php if ($flashList): ?>
+            <!-- ====== FLASH XABARLARNI AVTOMATIK YO'QOTISH (Vanilla JS) ======
+                 Xabarlardan KEYIN turadi, shuning uchun ular allaqachon sahifada. -->
+            <script>
+            (function () {
+                'use strict';
+
+                // Necha millisekunddan keyin yo'qolishi (xato uzoqroq turadi – o'qib ulgurish uchun)
+                var DURATION = { success: 3000, info: 3000, error: 3000 };
+                var FADE_MS  = 600;   // yo'qolish animatsiyasi davomiyligi
+
+                var boxes = document.querySelectorAll('[data-flash]');
+
+                Array.prototype.forEach.call(boxes, function (box) {
+                    var type      = box.getAttribute('data-flash');
+                    var remaining = DURATION[type] || DURATION.info;   // qolgan vaqt
+                    var startedAt = 0;
+                    var timer     = null;
+                    var closed    = false;
+
+                    /** Xabarni silliq yo'qotadi: xiralashadi, balandligi 0 ga tushadi, keyin o'chadi */
+                    function hide() {
+                        if (closed) { return; }
+                        closed = true;
+                        clearTimeout(timer);
+
+                        box.style.overflow   = 'hidden';
+                        box.style.maxHeight  = box.offsetHeight + 'px';
+                        box.style.transition = 'opacity ' + FADE_MS + 'ms ease, max-height ' + FADE_MS + 'ms ease, ' +
+                                               'margin ' + FADE_MS + 'ms ease, padding ' + FADE_MS + 'ms ease, ' +
+                                               'border-width ' + FADE_MS + 'ms ease';
+                        void box.offsetHeight;   // brauzer boshlang'ich holatni "ko'rib" olishi uchun
+
+                        box.style.opacity       = '0';
+                        box.style.maxHeight     = '0';
+                        box.style.marginBottom  = '0';
+                        box.style.paddingTop    = '0';
+                        box.style.paddingBottom = '0';
+                        box.style.borderWidth   = '0';
+
+                        setTimeout(function () {
+                            if (box.parentNode) { box.parentNode.removeChild(box); }
+                        }, FADE_MS + 100);
+                    }
+
+                    function start() {
+                        if (closed) { return; }
+                        startedAt = Date.now();
+                        clearTimeout(timer);
+                        timer = setTimeout(hide, remaining);
+                    }
+
+                    function pause() {
+                        if (closed) { return; }
+                        clearTimeout(timer);
+                        remaining = Math.max(1500, remaining - (Date.now() - startedAt));   // kamida 1.5 soniya qoladi
+                    }
+
+                    // Sichqoncha ustiga kelsa yoki tugmaga fokus tushsa – vaqt to'xtaydi
+                    box.addEventListener('mouseenter', pause);
+                    box.addEventListener('mouseleave', start);
+                    box.addEventListener('focusin', pause);
+                    box.addEventListener('focusout', start);
+
+                    // ✕ tugmasi – darhol yopadi
+                    var closeBtn = box.querySelector('[data-flash-close]');
+                    if (closeBtn) { closeBtn.addEventListener('click', hide); }
+
+                    start();
+                });
+            })();
+            </script>
+        <?php endif; ?>

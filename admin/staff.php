@@ -6,8 +6,10 @@
  *
  *  Imkoniyatlar:
  *    - xodimlar ro'yxati: bergan, qaytarib olgan va rad etgan kitoblar soni
- *    - "+ Xodim qo'shish": superadmin yangi kutubxonachi (role = 'admin') qo'shadi
- *      (FIO, email, parol – parol password_hash() bilan saqlanadi)
+ *    - "+ Xodim qo'shish": MODAL OYNA ochiladi (FIO, email, parol).
+ *      Parol password_hash() bilan saqlanadi. Paroldagi "Ko'rsatish" tugmasi
+ *      yozilayotgan parolni ko'rish imkonini beradi (xato yozmaslik uchun).
+ *      Xatolar oynaning ichida chiqadi, oyna ochiq va to'ldirilgan qoladi.
  *    - "Bloklash" (qizil) ↔ "Blokdan ochish" (sariq) tugmasi.
  *      Kasal bo'lgan xodim vaqtincha bloklanadi: tizimga kira olmaydi.
  *      Ishdan ketganlarni blokdan ochish shart emas.
@@ -23,6 +25,9 @@
  *  O'chirish va parolni yangilash tugmalari YO'Q (so'rov bo'yicha).
  *  Eslatma: avval migrations/011_xodim_bloklash.sql va
  *           migrations/012_rejected_at.sql ni ishga tushiring.
+ *
+ *  YANGI: xodim qo'shish formasi modal oynaga o'tkazildi, parolni
+ *  ko'rsatish/yashirish tugmasi qo'shildi, xatolar oyna ichida ko'rsatiladi.
  * ============================================================
  */
 
@@ -122,12 +127,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // Xatolik bo'lsa: xabarlar ko'rsatiladi, forma ochiq va to'ldirilgan holda qaytadi
-        foreach ($addErrors as $err) {
-            setFlash('error', $err);
-        }
-        $_SESSION['staff_add_old'] = ['name' => $newName, 'email' => $newEmail];
-        redirect('admin/staff.php?add=1');
+        // Xatolik bo'lsa: xatolar OYNA ICHIDA ko'rsatiladi (flash emas), oyna ochiq va
+        // to'ldirilgan holda qaytadi. Parol xavfsizlik uchun qaytarilmaydi.
+        $_SESSION['staff_add_errors'] = $addErrors;
+        $_SESSION['staff_add_old']    = ['name' => $newName, 'email' => $newEmail];
+        redirect('admin/staff.php');
     }
 
     // ---------- 1.2. BLOKLASH / BLOKDAN OCHISH ----------
@@ -332,12 +336,15 @@ if (isset($_GET['detail'])) {
 }
 
 // ------------------------------------------------------------
-// 3. XODIM QO'SHISH FORMASI HOLATI
-//    Xatolik bo'lsa forma to'ldirilgan holda qaytadi (parol qaytarilmaydi).
+// 3. XODIM QO'SHISH OYNASI HOLATI
+//    Oldingi urinishda xatolik bo'lgan bo'lsa, oyna ochiq holda, xatolar va
+//    to'ldirilgan maydonlar bilan qaytadi (parol qaytarilmaydi).
+//    Sahifa yangilanganda (refresh) bu ma'lumotlar o'chib ketadi.
 // ------------------------------------------------------------
-$addOld  = $_SESSION['staff_add_old'] ?? ['name' => '', 'email' => ''];
-unset($_SESSION['staff_add_old']);
-$showAdd = isset($_GET['add']);
+$addOld    = $_SESSION['staff_add_old'] ?? ['name' => '', 'email' => ''];
+$addErrors = $_SESSION['staff_add_errors'] ?? [];
+unset($_SESSION['staff_add_old'], $_SESSION['staff_add_errors']);
+$showAdd = !empty($addErrors);
 
 // ------------------------------------------------------------
 // 4. XODIMLAR RO'YXATI (bergan / qaytarib olgan / rad etgan soni bilan)
@@ -406,63 +413,20 @@ require_once __DIR__ . '/../includes/header.php';
 
 // Forma maydonlari uchun umumiy Tailwind sinflari
 $addInput = 'w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-300';
+// Parol maydonlari: o'ng tomonda "Ko'rsatish" tugmasiga joy qoldiriladi
+$passInput = $addInput . ' pr-28';
 ?>
 
 <div class="flex flex-wrap items-center justify-between gap-3 mb-2">
     <h1 class="text-2xl font-bold">Xodimlar (kutubxonachilar)</h1>
     <div class="flex items-center gap-3">
-        <!-- Yangi xodim qo'shish formasini ochadi -->
-        <button type="button" id="staffAddToggle"
+        <!-- Yangi xodim qo'shish OYNASINI ochadi -->
+        <button type="button" id="staffAddToggle" aria-haspopup="dialog" aria-controls="staffAddModal"
                 class="bg-green-600 hover:bg-green-700 text-white font-semibold rounded-md px-4 py-2 text-sm">
             + Xodim qo'shish
         </button>
         <a href="<?= e(url('admin/index.php')) ?>" class="text-blue-600 hover:underline text-sm">← Band qilishlarga qaytish</a>
     </div>
-</div>
-
-<!-- ====== YANGI XODIM QO'SHISH FORMASI (tugma bosilganda ochiladi) ====== -->
-<div id="staffAddBox" class="<?= $showAdd ? '' : 'hidden' ?> bg-white border border-green-200 rounded-xl p-4 mb-4">
-    <h2 class="font-bold text-green-800 mb-3">Yangi xodim (kutubxonachi) qo'shish</h2>
-
-    <form method="post" action="<?= e(url('admin/staff.php')) ?>" autocomplete="off"
-          class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <?= csrfField() ?>
-        <input type="hidden" name="action" value="add">
-
-        <div>
-            <label for="add_name" class="block text-sm font-semibold mb-1">To'liq ism (FIO)</label>
-            <input type="text" id="add_name" name="name" required maxlength="100"
-                   value="<?= e($addOld['name']) ?>" class="<?= $addInput ?>">
-        </div>
-
-        <div>
-            <label for="add_email" class="block text-sm font-semibold mb-1">Email (kirish uchun login)</label>
-            <input type="email" id="add_email" name="email" required maxlength="150"
-                   value="<?= e($addOld['email']) ?>" class="<?= $addInput ?>">
-        </div>
-
-        <div>
-            <label for="add_pass" class="block text-sm font-semibold mb-1">Parol (kamida 6 belgi)</label>
-            <input type="password" id="add_pass" name="password" required minlength="6" maxlength="72"
-                   autocomplete="new-password" class="<?= $addInput ?>">
-        </div>
-
-        <div>
-            <label for="add_pass2" class="block text-sm font-semibold mb-1">Parolni takrorlang</label>
-            <input type="password" id="add_pass2" name="password_confirm" required minlength="6" maxlength="72"
-                   autocomplete="new-password" class="<?= $addInput ?>">
-        </div>
-
-        <div class="md:col-span-2 flex gap-2">
-            <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-semibold rounded-md px-5 py-2 text-sm">
-                Qo'shish
-            </button>
-            <button type="button" id="staffAddCancel"
-                    class="border border-slate-300 bg-white hover:bg-slate-50 rounded-md px-4 py-2 text-sm">
-                Bekor qilish
-            </button>
-        </div>
-    </form>
 </div>
 
 <p class="text-slate-500 text-sm mb-4">
@@ -554,6 +518,91 @@ $addInput = 'w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:o
     </div>
 <?php endif; ?>
 
+<!-- ====== YANGI XODIM QO'SHISH MODALI ======
+     Tugma bosilganda ochiladi. Xatolik bo'lsa (server) sahifa shu oyna ochiq holda qaytadi.
+     "inert" – yopiq paytda ichidagi maydonlarga Tab bilan o'tib bo'lmaydi. -->
+<div id="staffAddModal" role="dialog" aria-modal="true" aria-labelledby="staffAddTitle"
+     <?= $showAdd ? '' : 'inert' ?>
+     class="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/50 transition-opacity duration-200
+            <?= $showAdd ? 'opacity-100' : 'opacity-0 pointer-events-none' ?>">
+    <div class="relative w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white rounded-xl shadow-2xl p-5">
+
+        <button type="button" id="staffAddClose" aria-label="Oynani yopish"
+                class="absolute top-2 right-2 rounded-full bg-white hover:bg-slate-100 shadow w-9 h-9 text-lg text-slate-600">✕</button>
+
+        <h2 id="staffAddTitle" class="text-xl font-bold text-green-800 pr-10">Yangi xodim (kutubxonachi) qo'shish</h2>
+        <p class="text-xs text-slate-500 mt-1">
+            Xodim shu email va parol bilan tizimga kiradi. Parolni xodimga o'zingiz yetkazasiz.
+        </p>
+
+        <!-- Xatoliklar: server yoki brauzer (JS) yozadi, faqat textContent orqali -->
+        <div id="staffAddErrors" role="alert"
+             class="<?= $addErrors ? '' : 'hidden' ?> mt-3 border border-red-300 bg-red-50 text-red-800 rounded-md px-4 py-3 text-sm">
+            <ul class="list-disc pl-5 space-y-1">
+                <?php foreach ($addErrors as $err): ?>
+                    <li><?= e($err) ?></li>
+                <?php endforeach; ?>
+            </ul>
+        </div>
+
+        <form method="post" action="<?= e(url('admin/staff.php')) ?>" id="staffAddForm"
+              autocomplete="off" novalidate class="mt-3 space-y-3">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="add">
+
+            <div>
+                <label for="add_name" class="block text-sm font-semibold mb-1">To'liq ism (FIO)</label>
+                <input type="text" id="add_name" name="name" required maxlength="100"
+                       value="<?= e($addOld['name']) ?>" class="<?= e($addInput) ?>">
+            </div>
+
+            <div>
+                <label for="add_email" class="block text-sm font-semibold mb-1">Email (kirish uchun login)</label>
+                <input type="email" id="add_email" name="email" required maxlength="150"
+                       value="<?= e($addOld['email']) ?>" class="<?= e($addInput) ?>">
+            </div>
+
+            <!-- Parol: o'ng tomondagi tugma yozilgan parolni ko'rsatadi / yashiradi -->
+            <div>
+                <label for="add_pass" class="block text-sm font-semibold mb-1">Parol (kamida 6 belgi)</label>
+                <div class="relative">
+                    <input type="password" id="add_pass" name="password" required minlength="6" maxlength="72"
+                           autocomplete="new-password" class="<?= e($passInput) ?>">
+                    <button type="button" data-pass-toggle="add_pass" aria-pressed="false"
+                            aria-label="Parolni ko'rsatish"
+                            class="absolute inset-y-0 right-0 px-3 text-xs text-slate-600 hover:text-slate-900 whitespace-nowrap">
+                        👁 Ko'rsatish
+                    </button>
+                </div>
+            </div>
+
+            <div>
+                <label for="add_pass2" class="block text-sm font-semibold mb-1">Parolni takrorlang</label>
+                <div class="relative">
+                    <input type="password" id="add_pass2" name="password_confirm" required minlength="6" maxlength="72"
+                           autocomplete="new-password" class="<?= e($passInput) ?>">
+                    <button type="button" data-pass-toggle="add_pass2" aria-pressed="false"
+                            aria-label="Takroriy parolni ko'rsatish"
+                            class="absolute inset-y-0 right-0 px-3 text-xs text-slate-600 hover:text-slate-900 whitespace-nowrap">
+                        👁 Ko'rsatish
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex gap-2 pt-1">
+                <button type="submit" id="staffAddSubmit"
+                        class="bg-green-600 hover:bg-green-700 disabled:bg-slate-400 text-white font-semibold rounded-md px-5 py-2 text-sm">
+                    Qo'shish
+                </button>
+                <button type="button" id="staffAddCancel"
+                        class="border border-slate-300 bg-white hover:bg-slate-50 rounded-md px-4 py-2 text-sm">
+                    Bekor qilish
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- ====== XODIM TAFSILOTI MODALI ======
      Ichini pastdagi JS to'ldiradi (faqat textContent – XSS bo'lmaydi). -->
 <div id="staffModal" role="dialog" aria-modal="true" aria-labelledby="staffModalTitle" inert
@@ -585,32 +634,193 @@ $addInput = 'w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:o
     </div>
 </div>
 
-<!-- ====== XODIM QO'SHISH FORMASINI OCHISH / YOPISH ====== -->
+<!-- ====== XODIM QO'SHISH MODALI (Vanilla JS) ======
+     - tugma bosilganda ochiladi; Esc, ✕, "Bekor qilish" yopadi
+     - qoraytirilgan fonga bosilganda faqat maydonlar BO'SH bo'lsa yopiladi
+       (tasodifan bosib, yozganlarni yo'qotib qo'ymaslik uchun)
+     - parol "Ko'rsatish / Yashirish" tugmalari
+     - yuborishdan oldin parollar mosligi brauzerda tekshiriladi
+     - oyna yopilganda parollar tozalanadi va yana yashiriladi
+     - Tab oyna ichida aylanadi -->
 <script>
 (function () {
     'use strict';
 
-    var toggle = document.getElementById('staffAddToggle');
-    var box    = document.getElementById('staffAddBox');
-    var cancel = document.getElementById('staffAddCancel');
-    if (!toggle || !box) { return; }
+    var modal     = document.getElementById('staffAddModal');
+    var openBtn   = document.getElementById('staffAddToggle');
+    var closeBtn  = document.getElementById('staffAddClose');
+    var cancelBtn = document.getElementById('staffAddCancel');
+    var form      = document.getElementById('staffAddForm');
+    var errBox    = document.getElementById('staffAddErrors');
+    var submitBtn = document.getElementById('staffAddSubmit');
+    if (!modal || !openBtn || !closeBtn || !form || !errBox) { return; }
 
-    // Tugma: formani ko'rsatadi/yashiradi, ochilganda birinchi maydonga o'tadi
-    toggle.addEventListener('click', function () {
-        var open = box.classList.toggle('hidden') === false;
-        if (open) {
-            var first = document.getElementById('add_name');
-            if (first) { first.focus(); }
+    var nameEl  = document.getElementById('add_name');
+    var emailEl = document.getElementById('add_email');
+    var passEl  = document.getElementById('add_pass');
+    var pass2El = document.getElementById('add_pass2');
+
+    var FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
+    var lastFocus = null;
+
+    function isOpen() { return !modal.classList.contains('pointer-events-none'); }
+
+    /** Xatolar ro'yxatini chizadi (matn faqat textContent orqali). Bo'sh bo'lsa – yashiradi. */
+    function showErrors(messages) {
+        errBox.textContent = '';
+        if (!messages.length) {
+            errBox.classList.add('hidden');
+            return;
+        }
+        var ul = document.createElement('ul');
+        ul.className = 'list-disc pl-5 space-y-1';
+        messages.forEach(function (text) {
+            var li = document.createElement('li');
+            li.textContent = text;
+            ul.appendChild(li);
+        });
+        errBox.appendChild(ul);
+        errBox.classList.remove('hidden');
+    }
+
+    /** Parol maydonini yana yashirin holatga qaytaradi */
+    function hidePassword(input) {
+        input.type = 'password';
+        var btn = form.querySelector('[data-pass-toggle="' + input.id + '"]');
+        if (btn) {
+            btn.textContent = '👁 Ko\'rsatish';
+            btn.setAttribute('aria-pressed', 'false');
+            btn.setAttribute('aria-label', 'Parolni ko\'rsatish');
+        }
+    }
+
+    function openModal() {
+        lastFocus = document.activeElement;
+        modal.inert = false;
+        modal.classList.remove('opacity-0', 'pointer-events-none');
+        modal.classList.add('opacity-100');
+        document.body.classList.add('overflow-hidden');
+        modal.scrollTop = 0;
+        if (nameEl) { nameEl.focus({ preventScroll: true }); }
+    }
+
+    function closeModal() {
+        modal.classList.add('opacity-0', 'pointer-events-none');
+        modal.classList.remove('opacity-100');
+        document.body.classList.remove('overflow-hidden');
+        modal.inert = true;
+
+        // Xavfsizlik: parollar xotirada qolmasin va yashirin holatga qaytsin
+        passEl.value = '';
+        pass2El.value = '';
+        hidePassword(passEl);
+        hidePassword(pass2El);
+        showErrors([]);
+        if (submitBtn) { submitBtn.disabled = false; }
+
+        if (lastFocus && typeof lastFocus.focus === 'function') {
+            lastFocus.focus({ preventScroll: true });
+        }
+    }
+
+    /** Hech narsa yozilmaganmi? (fonga bosib yopish uchun ruxsat) */
+    function isFormEmpty() {
+        return !(nameEl.value.trim() || emailEl.value.trim() || passEl.value || pass2El.value);
+    }
+
+    openBtn.addEventListener('click', openModal);
+    closeBtn.addEventListener('click', closeModal);
+    if (cancelBtn) { cancelBtn.addEventListener('click', closeModal); }
+
+    modal.addEventListener('click', function (event) {
+        if (event.target === modal && isFormEmpty()) { closeModal(); }
+    });
+
+    // Parolni ko'rsatish / yashirish (hodisa delegatsiyasi)
+    form.addEventListener('click', function (event) {
+        var btn = event.target.closest('[data-pass-toggle]');
+        if (!btn) { return; }
+
+        var input = document.getElementById(btn.getAttribute('data-pass-toggle'));
+        if (!input) { return; }
+
+        var show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        btn.textContent = show ? '🙈 Yashirish' : '👁 Ko\'rsatish';
+        btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+        btn.setAttribute('aria-label', show ? 'Parolni yashirish' : 'Parolni ko\'rsatish');
+        input.focus({ preventScroll: true });
+    });
+
+    // Yuborishdan oldin brauzerdagi tekshiruv (server baribir qayta tekshiradi)
+    form.addEventListener('submit', function (event) {
+        var errors = [];
+        var nameLen = nameEl.value.trim().length;
+
+        if (nameLen < 3 || nameLen > 100) {
+            errors.push('Xodim FIO si 3 tadan 100 tagacha belgidan iborat bo\'lsin.');
+        }
+        if (!emailEl.value.trim() || !emailEl.checkValidity()) {
+            errors.push('Email manzili noto\'g\'ri kiritilgan.');
+        }
+        if (passEl.value.length < 6 || passEl.value.length > 72) {
+            errors.push('Parol 6 tadan 72 tagacha belgidan iborat bo\'lsin.');
+        }
+        if (passEl.value !== pass2El.value) {
+            errors.push('Parol va uning takrori bir xil emas.');
+        }
+
+        if (errors.length) {
+            event.preventDefault();
+            showErrors(errors);
+            return;
+        }
+
+        // Ikki marta bosib, ikki marta yuborilmasligi uchun
+        if (submitBtn) { submitBtn.disabled = true; }
+    });
+
+    // Esc – yopish, Tab – oyna ichida aylantirish
+    document.addEventListener('keydown', function (event) {
+        if (!isOpen()) { return; }
+
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeModal();
+            return;
+        }
+
+        if (event.key === 'Tab') {
+            var focusable = Array.prototype.filter.call(modal.querySelectorAll(FOCUSABLE), function (n) {
+                return n.offsetParent !== null;
+            });
+            if (!focusable.length) { return; }
+
+            var first = focusable[0], last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault(); last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault(); first.focus();
+            }
         }
     });
 
-    if (cancel) {
-        cancel.addEventListener('click', function () { box.classList.add('hidden'); });
+    // Server xatolik bilan oynani ochiq qaytargan bo'lsa: sahifa aylanmasin va fokus maydonga o'tsin
+    if (isOpen()) {
+        document.body.classList.add('overflow-hidden');
+        // Birinchi to'ldirilmagan maydonga fokus
+        var target = !nameEl.value ? nameEl : (!emailEl.value ? emailEl : passEl);
+        target.focus({ preventScroll: true });
     }
+
+    // "Orqaga" tugmasi bilan qaytilganda ochiq oyna qolib ketmasin
+    window.addEventListener('pageshow', function (event) {
+        if (event.persisted && isOpen()) { closeModal(); }
+    });
 })();
 </script>
 
-<!-- ====== XODIM MODALI (Vanilla JS) ======
+<!-- ====== XODIM TAFSILOTI MODALI (Vanilla JS) ======
      Ism bosilganda ?detail=ID dan JSON olinadi va ro'yxat chiziladi.
      Filtr tugmalari ro'yxatni mijoz tomonda saralaydi.
      Esc, orqa fon yoki ✕ yopadi; Tab oyna ichida aylanadi. -->
