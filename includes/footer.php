@@ -24,7 +24,10 @@ require_once __DIR__ . '/book_helpers.php';
 // Oyna ichidagi tugmalar foydalanuvchi roliga qarab o'zgaradi.
 // Rol: guest (kirmagan) | student (talaba) | admin (kutubxonachi).
 $footerUser = currentUser();
-$modalRole  = $footerUser === null ? 'guest' : ($footerUser['role'] === 'admin' ? 'admin' : 'student');
+// Superadmin ham admin kabi offlayn berish tugmasini ko'radi
+$modalRole  = $footerUser === null
+    ? 'guest'
+    : (in_array($footerUser['role'], ['admin', 'superadmin'], true) ? 'admin' : 'student');
 
 // JS kelgan-ketganini tekshiramiz (footer.php skriptni shu manzildan ulaydi)
 $hasBookModalJs = is_readable(__DIR__ . '/../assets/js/book-modal.js');

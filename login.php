@@ -58,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             try {
                 // 2) Foydalanuvchini email bo'yicha qidiramiz (Prepared statement)
-                $stmt = $pdo->prepare('SELECT id, name, password, role FROM users WHERE email = :email LIMIT 1');
+                $stmt = $pdo->prepare('SELECT id, name, password, role, is_blocked FROM users WHERE email = :email LIMIT 1');
                 $stmt->execute([':email' => $email]);
                 $found = $stmt->fetch();
 
@@ -67,21 +67,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $passwordOk  = password_verify($password, $hashToCheck);
 
                 if ($found && $passwordOk) {
-                    // Xesh algoritmi eskirgan bo'lsa, yangisi bilan yangilaymiz
-                    if (password_needs_rehash($found['password'], PASSWORD_DEFAULT)) {
-                        $upd = $pdo->prepare('UPDATE users SET password = :password WHERE id = :id');
-                        $upd->execute([
-                            ':password' => password_hash($password, PASSWORD_DEFAULT),
-                            ':id'       => $found['id'],
-                        ]);
+                    // Bloklangan akkaunt (parol to'g'ri bo'lsa ham) tizimga kira olmaydi
+                    if ((int) $found['is_blocked'] === 1) {
+                        $errors[] = "Akkauntingiz vaqtincha bloklangan. Kutubxona rahbariga murojaat qiling.";
                     }
+                    else {
+                        // Xesh algoritmi eskirgan bo'lsa, yangisi bilan yangilaymiz
+                            if (password_needs_rehash($found['password'], PASSWORD_DEFAULT)) {
+                            $upd = $pdo->prepare('UPDATE users SET password = :password WHERE id = :id');
+                            $upd->execute([
+                                ':password' => password_hash($password, PASSWORD_DEFAULT),
+                                ':id'       => $found['id'],
+                            ]);
+                        }
 
-                    unset($_SESSION['login_fails']);   // muvaffaqiyatli kirish – hisob tozalanadi
-                    loginUser((int) $found['id']);
-                    setFlash('success', 'Xush kelibsiz, ' . $found['name'] . '!');
+                        unset($_SESSION['login_fails']);   // muvaffaqiyatli kirish – hisob tozalanadi
+                        loginUser((int) $found['id']);
+                        setFlash('success', 'Xush kelibsiz, ' . $found['name'] . '!');
 
-                    // Kutubxonachi – admin panelga, talaba – bosh sahifaga
-                    redirect($found['role'] === 'admin' ? 'admin/index.php' : 'index.php');
+                        // Kutubxonachi – admin panelga, talaba – bosh sahifaga
+                        redirect(in_array($found['role'], ['admin', 'superadmin'], true) ? 'admin/index.php' : 'index.php');
+                    }
                 }
 
                 // Email yoki parol noto'g'ri (qaysi biri ekanini aytmaymiz)

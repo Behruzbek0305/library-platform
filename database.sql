@@ -65,8 +65,10 @@ CREATE TABLE `users` (
   `hemis_id`   VARCHAR(20)  NULL,                             -- HEMIS ID – keyingi integratsiya uchun
   `password`   VARCHAR(255) NOT NULL,                         -- password_hash() natijasi (ochiq parol SAQLANMAYDI)
   `password_set` TINYINT(1) NOT NULL DEFAULT 1,               -- 0 = kutubxonachi offlayn yaratgan, parol hali o'rnatilmagan (register.php da o'rnatiladi)
-  `role`       ENUM('talaba','admin') NOT NULL DEFAULT 'talaba', -- Rol: talaba yoki kutubxonachi (admin)
+  `role`       ENUM('talaba','admin','superadmin') NOT NULL DEFAULT 'talaba', -- Rol: talaba, kutubxonachi (admin) yoki bosh admin (superadmin)
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,  -- Ro'yxatdan o'tgan vaqti
+  `is_blocked`  TINYINT(1) NOT NULL DEFAULT 0 AFTER `role`,   -- 1 = bloklangan, tizimga kira olmaydi
+  `blocked_at`  DATETIME NULL AFTER `is_blocked`,             -- Qachon bloklangan
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_users_email` (`email`),                      -- Bitta email bilan faqat bitta akkaunt
   UNIQUE KEY `uq_users_hemis` (`hemis_id`)                    -- Bitta HEMIS ID bilan faqat bitta akkaunt

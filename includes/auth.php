@@ -41,6 +41,7 @@ if (session_status() === PHP_SESSION_NONE) {
 /**
  * Tizimga kirgan foydalanuvchi ma'lumotlarini bazadan olib qaytaradi.
  * Kirmagan bo'lsa null qaytaradi. Parol xeshi hech qachon qaytarilmaydi.
+ * YANGI: akkaunt bloklangan bo'lsa (is_blocked = 1), sessiya darhol yopiladi.
  */
 function currentUser(): ?array
 {
@@ -55,13 +56,17 @@ function currentUser(): ?array
 
     if (!empty($_SESSION['user_id'])) {
         $stmt = $pdo->prepare(
-            'SELECT id, name, email, role, faculty, direction, group_name, hemis_id
+            'SELECT id, name, email, role, is_blocked, faculty, direction, group_name, hemis_id
              FROM users WHERE id = :id LIMIT 1'
         );
         $stmt->execute([':id' => $_SESSION['user_id']]);
         $row = $stmt->fetch();
 
-        if ($row) {
+        if ($row && (int) $row['is_blocked'] === 1) {
+            // Bloklangan xodim: sessiya tozalanadi va xabar beriladi
+            unset($_SESSION['user_id']);
+            setFlash('error', 'Akkauntingiz vaqtincha bloklangan. Kutubxona rahbariga murojaat qiling.');
+        } elseif ($row) {
             $user = $row;
         } else {
             // Foydalanuvchi bazadan o'chirilgan bo'lsa, sessiyani tozalaymiz
@@ -78,11 +83,37 @@ function isLoggedIn(): bool
     return currentUser() !== null;
 }
 
-/** Foydalanuvchi kutubxonachi (admin) mi? */
-function isAdmin(): bool
+// ------------------------------------------------------------
+// ROLLAR VA RUXSATLAR
+//   talaba     – oddiy foydalanuvchi
+//   admin      – kutubxonachi (band qilishlar, kitoblar, talabalar)
+//   superadmin – bosh admin (admin huquqlari + xodimlarni boshqarish)
+// Rol har safar currentUser() orqali BAZADAN olinadi (sessiyaga ishonilmaydi),
+// shuning uchun bazada rol o'zgarsa, eski sessiya eski huquq bilan qolib ketmaydi.
+// ------------------------------------------------------------
+
+/** Foydalanuvchi Superadmin (Bosh admin) mi? */
+function isSuperAdmin(): bool
 {
     $user = currentUser();
-    return $user !== null && $user['role'] === 'admin';
+    return $user !== null && $user['role'] === 'superadmin';
+}
+
+/** Foydalanuvchi admin YOKI superadmin mi? (admin panelga kirish huquqi) */
+function isAdminOrSuperAdmin(): bool
+{
+    $user = currentUser();
+    return $user !== null && in_array($user['role'], ['admin', 'superadmin'], true);
+}
+
+/**
+ * Eski kod bilan moslik: loyihada isAdmin() ko'p joyda ishlatilgan.
+ * Endi u superadminni ham "admin" deb qabul qiladi, aks holda
+ * superadmin admin sahifalarga kira olmay qolardi.
+ */
+function isAdmin(): bool
+{
+    return isAdminOrSuperAdmin();
 }
 
 // ------------------------------------------------------------
@@ -136,11 +167,23 @@ function requireStudent(): void
     }
 }
 
-/** Faqat kutubxonachi (admin) uchun sahifalarda ishlatiladi */
+/** Faqat kutubxonachi (admin yoki superadmin) uchun sahifalarda ishlatiladi */
 function requireAdmin(): void
 {
-    if (!isAdmin()) {
+    if (!isAdminOrSuperAdmin()) {
         setFlash('error', 'Bu sahifa faqat kutubxonachi uchun.');
         redirect('index.php');
+    }
+}
+
+/**
+ * Faqat Superadmin uchun sahifalarda ishlatiladi (masalan admin/staff.php).
+ * Oddiy admin – admin panelga, boshqalar – bosh sahifaga qaytariladi.
+ */
+function requireSuperAdmin(): void
+{
+    if (!isSuperAdmin()) {
+        setFlash('error', 'Bu sahifa faqat Bosh admin (superadmin) uchun.');
+        redirect(isAdminOrSuperAdmin() ? 'admin/index.php' : 'index.php');
     }
 }

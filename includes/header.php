@@ -36,6 +36,8 @@ $navItems = [
     ['file' => 'admin/index.php', 'label' => "Band qilishlar",        'show' => isAdmin()],
     ['file' => 'admin/books.php', 'label' => "Kitoblarni boshqarish", 'show' => isAdmin()],
     ['file' => 'admin/students.php', 'label' => "Talabalar", 'show' => isAdmin()],
+    // Faqat Superadmin ko'radi (oddiy admin va talabaga menyuda chiqmaydi)
+    ['file' => 'admin/staff.php', 'label' => "Xodimlar", 'show' => isSuperAdmin()],
     ['file' => 'login.php',       'label' => "Kirish",                'show' => $user === null],
     ['file' => 'register.php',    'label' => "Ro'yxatdan o'tish",     'show' => $user === null],
 ];

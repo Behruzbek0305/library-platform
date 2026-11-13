@@ -161,7 +161,7 @@ try {
             $pdo->rollBack();
             setFlash('error',
                 'Bu HEMIS ID / Email tizimda talaba sifatida emas, balki "'
-                . ($student['role'] === 'admin' ? 'kutubxonachi' : $student['role'])
+                . (in_array($student['role'], ['admin', 'superadmin'], true) ? 'kutubxonachi' : $student['role'])
                 . '" sifatida ro\'yxatdan o\'tgan. Boshqa ma\'lumot kiriting.');
             redirect($backUrl);
         }
