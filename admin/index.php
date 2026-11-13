@@ -379,14 +379,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
         } elseif ($action === 'reject') {
-            // Qo'lda rad etish: rejected_by yoziladi (shu sababli avto-rad etish emas)
+            // Qo'lda rad etish: rejected_by va rejected_at yoziladi
             $stmt = $pdo->prepare(
                 "UPDATE reservations
-                 SET status = 'rad_etildi', rejected_by = :staff_id
+                 SET status = 'rad_etildi', rejected_by = :staff_id, rejected_at = :now
                  WHERE id = :id AND status = 'kutilmoqda'"
             );
             $stmt->execute([
                 ':staff_id' => $staffId > 0 ? $staffId : null,
+                ':now'      => $now,
                 ':id'       => $id,
             ]);
             $message = 'Band qilish rad etildi.';

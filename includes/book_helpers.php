@@ -483,11 +483,12 @@ function expireOverdueReservations(PDO $pdo): int
         if ($expired) {
             $upd = $pdo->prepare(
                 "UPDATE reservations
-                SET status = 'rad_etildi', auto_rejected = 1
+                SET status = 'rad_etildi', auto_rejected = 1, rejected_at = :now
                 WHERE id = :id AND status = 'kutilmoqda'"
             );
+            $nowStr = date('Y-m-d H:i:s');
             foreach ($expired as $row) {
-                $upd->execute([':id' => (int) $row['id']]);
+                $upd->execute([':now' => $nowStr, ':id' => (int) $row['id']]);
                 if ($upd->rowCount() > 0) {
                     $count++;
                     incrementAvailableCopies($pdo, (int) $row['book_id']);

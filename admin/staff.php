@@ -27,8 +27,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/book_helpers.php';
 
-// Faqat kutubxonachi kira oladi
-requireAdmin();
+// Faqat superadmin kira oladi
+requireSuperAdmin();
 
 $meId = (int) ($_SESSION['user_id'] ?? 0);
 
@@ -136,7 +136,7 @@ if (isset($_GET['detail'])) {
         // Har bir nomli parametr faqat BIR marta (ATTR_EMULATE_PREPARES = false),
         // shuning uchun :a, :b va :c alohida nomlangan.
         $st = $pdo->prepare(
-            'SELECT r.id, r.status, r.served_by, r.returned_by, r.rejected_by, r.is_offline,
+            'SELECT r.id, r.status, r.served_by, r.returned_by, r.rejected_by, r.rejected_at, r.is_offline,
                     r.created_at, r.picked_up_at, r.due_date, r.returned_at,
                     u.name AS student, u.hemis_id, u.faculty, u.group_name,
                     b.title AS book,
@@ -218,14 +218,22 @@ if (isset($_GET['detail'])) {
             }
 
             // ---- 3) Xodim band qilishni rad etgan ----
-            // Rad etilgan vaqt bazada saqlanmaydi, shuning uchun band qilingan vaqt ko'rsatiladi.
+            // Yangi yozuvlarda aniq rad etilgan vaqt (rejected_at) bor.
+            // 012-migratsiyadan oldingi eski yozuvlarda u yo'q: band qilingan vaqt ko'rsatiladi.
             if ((int) $row['rejected_by'] === $staffId) {
-                $when = (string) $row['created_at'];
+                if (!empty($row['rejected_at'])) {
+                    $when = (string) $row['rejected_at'];
+                    $note = 'Band qilingan: ' . staffDate((string) $row['created_at']);
+                } else {
+                    $when = (string) $row['created_at'];
+                    $note = 'Band qilingan vaqti: ' . staffDate($when) . ' (aniq rad etilgan vaqt saqlanmagan)';
+                }
+
                 $items[] = $base + [
                     'role'  => 'Rad etgan',
                     'kind'  => 'rejected',
                     'state' => '',
-                    'note'  => 'Band qilingan vaqti: ' . staffDate($when),
+                    'note'  => $note,
                     'at'    => staffDate($when),
                     'ts'    => (int) strtotime($when),
                 ];
@@ -570,7 +578,10 @@ require_once __DIR__ . '/../includes/header.php';
 
             // Kitob va vaqt
             card.appendChild(el('div', 'mt-1 text-slate-700 break-words', '📖 ' + it.book));
-            card.appendChild(el('div', 'text-xs text-slate-500 mt-0.5', it.at));
+            // Vaqt qatori: qaysi amal vaqti ekanini yozib ko'rsatamiz
+            var atLabels = { given: 'Berilgan: ', returned: 'Qabul qilingan: ', rejected: 'Rad etilgan: ' };
+            var atText   = (atLabels[it.kind] || '') + it.at;
+            card.appendChild(el('div', 'text-xs text-slate-500 mt-0.5', atText));
 
             // Qo'shimcha izoh: muddat, kechikish, kim qabul qilgani va hokazo
             if (it.note) {

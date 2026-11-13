@@ -66,34 +66,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $hashToCheck = $found ? $found['password'] : DUMMY_HASH;
                 $passwordOk  = password_verify($password, $hashToCheck);
 
-                if ($found && $passwordOk) {
-                    // Bloklangan akkaunt (parol to'g'ri bo'lsa ham) tizimga kira olmaydi
-                    if ((int) $found['is_blocked'] === 1) {
-                        $errors[] = "Akkauntingiz vaqtincha bloklangan. Kutubxona rahbariga murojaat qiling.";
-                    }
-                    else {
-                        // Xesh algoritmi eskirgan bo'lsa, yangisi bilan yangilaymiz
-                            if (password_needs_rehash($found['password'], PASSWORD_DEFAULT)) {
-                            $upd = $pdo->prepare('UPDATE users SET password = :password WHERE id = :id');
-                            $upd->execute([
-                                ':password' => password_hash($password, PASSWORD_DEFAULT),
-                                ':id'       => $found['id'],
-                            ]);
-                        }
+                if ($found && $passwordOk && (int) $found['is_blocked'] === 1) {
+                    // Parol to'g'ri, lekin akkaunt bloklangan: FAQAT shu xabar chiqadi.
+                    // Xato urinishlar hisobi oshirilmaydi (parol xato emas).
+                    $errors[] = "Akkauntingiz vaqtincha bloklangan. Kutubxona rahbariga murojaat qiling.";
 
-                        unset($_SESSION['login_fails']);   // muvaffaqiyatli kirish – hisob tozalanadi
-                        loginUser((int) $found['id']);
-                        setFlash('success', 'Xush kelibsiz, ' . $found['name'] . '!');
-
-                        // Kutubxonachi – admin panelga, talaba – bosh sahifaga
-                        redirect(in_array($found['role'], ['admin', 'superadmin'], true) ? 'admin/index.php' : 'index.php');
+                } elseif ($found && $passwordOk) {
+                    // Xesh algoritmi eskirgan bo'lsa, yangisi bilan yangilaymiz
+                    if (password_needs_rehash($found['password'], PASSWORD_DEFAULT)) {
+                        $upd = $pdo->prepare('UPDATE users SET password = :password WHERE id = :id');
+                        $upd->execute([
+                            ':password' => password_hash($password, PASSWORD_DEFAULT),
+                            ':id'       => $found['id'],
+                        ]);
                     }
+
+                    unset($_SESSION['login_fails']);   // muvaffaqiyatli kirish – hisob tozalanadi
+                    loginUser((int) $found['id']);
+                    setFlash('success', 'Xush kelibsiz, ' . $found['name'] . '!');
+
+                    // Kutubxonachi – admin panelga, talaba – bosh sahifaga
+                    redirect(in_array($found['role'], ['admin', 'superadmin'], true) ? 'admin/index.php' : 'index.php');
+
+                } else {
+                    // Email yoki parol noto'g'ri (qaysi biri ekanini aytmaymiz)
+                    $fails['count'] = (int) $fails['count'] + 1;
+                    $_SESSION['login_fails'] = $fails;
+                    $errors[] = "Email yoki parol noto'g'ri.";
                 }
-
-                // Email yoki parol noto'g'ri (qaysi biri ekanini aytmaymiz)
-                $fails['count'] = (int) $fails['count'] + 1;
-                $_SESSION['login_fails'] = $fails;
-                $errors[] = "Email yoki parol noto'g'ri.";
             } catch (PDOException $ex) {
                 error_log('[Kutubxona-ARM] Kirishda xatolik: ' . $ex->getMessage());
                 $errors[] = "Kutilmagan xatolik yuz berdi. Keyinroq urinib ko'ring.";

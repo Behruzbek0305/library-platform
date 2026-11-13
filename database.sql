@@ -133,6 +133,7 @@ CREATE TABLE `reservations` (
   `served_by`       INT UNSIGNED NULL,                          -- Tasdiqlagan / offlayn bergan kutubxonachi (users.id)
   `returned_by`     INT UNSIGNED NULL,                          -- «Qaytarildi» deb belgilagan kutubxonachi (users.id)
   `rejected_by`     INT UNSIGNED NULL,                          -- Rad etgan kutubxonachi (NULL = muddati o'tib avtomatik rad etilgan)
+  `rejected_at`     DATETIME NULL,                              -- Rad etilgan aniq vaqt (qo'lda ham, avtomatik ham)
   `auto_rejected`   TINYINT(1) NOT NULL DEFAULT 0,              -- 1 = muddati o'tib TIZIM avtomatik rad etgan (rejected_by NULL bo'ladi)
   `created_at`      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Yozuv yaratilgan vaqt
   PRIMARY KEY (`id`),
