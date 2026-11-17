@@ -93,6 +93,7 @@ CREATE TABLE `books` (
   `available_copies` INT UNSIGNED NOT NULL DEFAULT 1,         -- HOZIR BO'SH nusxalar soni (6-bosqich: real-time; berilganda kamayadi, «Qaytarildi» da qo'shiladi)
   `created_at`  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Katalogga qo'shilgan vaqti
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_books_title_author` (`title`, `author`),     -- Bir xil nomi va muallifli kitob ikki marta bo'lmaydi
   KEY `idx_books_title` (`title`),                            -- Nomi bo'yicha qidiruvni tezlashtiradi
   KEY `idx_books_author` (`author`),                          -- Muallif bo'yicha qidiruvni tezlashtiradi
   KEY `idx_books_category` (`category`),                      -- Kategoriya bo'yicha saralashni tezlashtiradi

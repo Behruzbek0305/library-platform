@@ -11,8 +11,13 @@
  *
  *  3-bosqich: kitobga SOHA (field) va JANR (genre) kiritish qo'shildi.
  *  Bu maydonlar index.php va catalog.php dagi filtrlar uchun kerak.
- *  Ikkalasi ixtiyoriy; bo'sh qoldirilsa bazaga NULL yoziladi.
+ *  Ikkalasi ixtiyoriy; bo'sh qoldirilsa bazaga NULL yozilади.
  *  Maydonlar <datalist> bilan: mavjud qiymatlardan tanlash yoki yangisini yozish mumkin.
+ *
+ *  YANGI: TAKRORLANISHNI TEKSHIRISH.
+ *    Nomi va muallifi bir xil kitob ikkinchi marta qo'shilmaydi
+ *    (katta-kichik harf, ortiqcha bo'shliq va apostrof turlari farqi hisobga olinmaydi).
+ *    Takror topilsa, mavjud kitobni tahrirlashga havola ko'rsatiladi.
  *
  *  Eslatma: avval migrations/007_field_genre.sql ni ishga tushiring.
  * ============================================================
@@ -33,6 +38,59 @@ const ALLOWED_COVERS  = [                  // ruxsat etilgan turlar va kengaytma
     'image/png'  => 'png',
     'image/webp' => 'webp',
 ];
+
+// ------------------------------------------------------------
+// 0. TAKRORLANISHNI TEKSHIRISH UCHUN YORDAMCHI FUNKSIYALAR
+// ------------------------------------------------------------
+
+/**
+ * Matnni solishtirish uchun tayyorlaydi:
+ *   - ortiqcha bo'shliqlar bitta bo'shliqqa aylanadi
+ *   - o' / oʻ / o’ / o‘ / o` kabi apostrof turlari oddiy ' ga almashtiriladi
+ * Katta-kichik harf farqini bazaning utf8mb4_unicode_ci kolatsiyasi o'zi hisobga olmaydi.
+ */
+function bookCompareText(string $text): string
+{
+    $text = trim((string) preg_replace('/\s+/u', ' ', $text));
+
+    return str_replace(['ʻ', 'ʼ', '’', '‘', '`', '´'], "'", $text);
+}
+
+/**
+ * Bazadagi ustunni xuddi shunday tayyorlaydigan SQL ifodasi
+ * (apostrof turlari oddiy ' ga almashtiriladi, chetdagi bo'shliqlar olib tashlanadi).
+ * $column – faqat shu fayl ichidagi qat'iy nom ('title' yoki 'author'), foydalanuvchi qiymati emas.
+ */
+function bookCompareSql(string $column): string
+{
+    return "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(b.{$column}),"
+         . "'ʻ',''''),'ʼ',''''),'’',''''),'‘',''''),'`',''''),'´','''')";
+}
+
+/**
+ * Nomi va muallifi bir xil kitob bormi? Bo'lsa – uning ma'lumotlarini qaytaradi.
+ * $exceptId – tahrirlashda kitobning o'zini hisobga olmaslik uchun (yangi kitobda 0).
+ * DIQQAT: har bir nomli parametr so'rovda faqat BIR marta ishlatiladi.
+ */
+function findDuplicateBook(PDO $pdo, string $title, string $author, int $exceptId = 0): ?array
+{
+    $stmt = $pdo->prepare(
+        'SELECT b.id, b.title, b.author, b.copies, b.available_copies
+         FROM books b
+         WHERE ' . bookCompareSql('title') . ' = :title_key
+           AND ' . bookCompareSql('author') . ' = :author_key
+           AND b.id <> :except_id
+         ORDER BY b.id ASC
+         LIMIT 1'
+    );
+    $stmt->execute([
+        ':title_key'  => bookCompareText($title),
+        ':author_key' => bookCompareText($author),
+        ':except_id'  => $exceptId,
+    ]);
+
+    return $stmt->fetch() ?: null;
+}
 
 // ------------------------------------------------------------
 // 1. TAHRIRLASH REJIMIMI? (?id=...)
@@ -62,7 +120,8 @@ $form = [
     'copies'      => (string) ($book['copies'] ?? 1),
     'description' => $book['description'] ?? '',
 ];
-$errors = [];
+$errors    = [];
+$duplicate = null;   // takror topilsa, mavjud kitob ma'lumotlari shu yerga tushadi
 
 // ------------------------------------------------------------
 // 1.1. SOHA VA JANR TAVSIYALARI (datalist uchun)
@@ -95,8 +154,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = "Sessiya muddati tugagan. Sahifani yangilab, qayta urinib ko'ring.";
     } else {
         // 2.1. Matn maydonlarini olamiz (ortiqcha bo'shliqlar tozalanadi)
-        $form['title']       = trim((string) ($_POST['title'] ?? ''));
-        $form['author']      = trim((string) ($_POST['author'] ?? ''));
+        $form['title']       = trim((string) preg_replace('/\s+/u', ' ', (string) ($_POST['title'] ?? '')));
+        $form['author']      = trim((string) preg_replace('/\s+/u', ' ', (string) ($_POST['author'] ?? '')));
         $form['category']    = (string) ($_POST['category'] ?? '');
         $form['field']       = trim((string) preg_replace('/\s+/u', ' ', (string) ($_POST['field'] ?? '')));
         $form['genre']       = trim((string) preg_replace('/\s+/u', ' ', (string) ($_POST['genre'] ?? '')));
@@ -104,10 +163,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $form['description'] = trim((string) ($_POST['description'] ?? ''));
 
         // 2.2. Tekshiruvlar
-        if (mb_strlen($form['title']) < 1 || mb_strlen($form['title']) > 200) {
+        $titleOk  = mb_strlen($form['title'])  >= 1 && mb_strlen($form['title'])  <= 200;
+        $authorOk = mb_strlen($form['author']) >= 1 && mb_strlen($form['author']) <= 150;
+
+        if (!$titleOk) {
             $errors[] = "Kitob nomi 1 tadan 200 tagacha belgidan iborat bo'lsin.";
         }
-        if (mb_strlen($form['author']) < 1 || mb_strlen($form['author']) > 150) {
+        if (!$authorOk) {
             $errors[] = "Muallif 1 tadan 150 tagacha belgidan iborat bo'lsin.";
         }
         if (!in_array($form['category'], BOOK_CATEGORIES, true)) {
@@ -128,6 +190,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if (mb_strlen($form['description']) > 2000) {
             $errors[] = "Tavsif 2000 belgidan oshmasin.";
+        }
+
+        // 2.2.1. TAKRORLANISH: nomi va muallifi bir xil kitob allaqachon bormi?
+        //        Rasm diskka yozilishidan OLDIN tekshiramiz (yetim rasm qolmasligi uchun).
+        if ($titleOk && $authorOk) {
+            try {
+                $duplicate = findDuplicateBook($pdo, $form['title'], $form['author'], $isEdit ? (int) $id : 0);
+
+                if ($duplicate !== null) {
+                    $errors[] = "«" . $duplicate['title'] . "» (muallif: " . $duplicate['author'] . ") kitobi katalogda allaqachon mavjud.";
+                }
+            } catch (PDOException $ex) {
+                error_log('[Kutubxona-ARM] Takrorlanishni tekshirishda xatolik: ' . $ex->getMessage());
+                $errors[] = "Kitobni tekshirishda xatolik yuz berdi. Keyinroq urinib ko'ring.";
+            }
         }
 
         // Tahrirlashda: nusxalar soni hozir band bo'lganlardan kam bo'lmasligi kerak
@@ -274,10 +351,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 redirect('admin/books.php');
 
             } catch (PDOException $ex) {
-                // Baza xatosi bo'lsa, yuklangan rasm yetim qolmasligi uchun o'chiramiz
+                 // Baza xatosi bo'lsa, yuklangan rasm yetim qolmasligi uchun o'chiramiz
                 deleteCoverFile($newCoverPath);
-                error_log('[Kutubxona-ARM] Kitobni saqlashda xatolik: ' . $ex->getMessage());
-                $errors[] = "Kitobni saqlashda xatolik yuz berdi. (007-migratsiya ishga tushirilganmi?)";
+
+                if ((string) $ex->getCode() === '23000') {
+                    // UNIQUE indeks (uq_books_title_author): ikki kishi bir vaqtda bir xil kitob qo'shdi
+                    try {
+                        $duplicate = findDuplicateBook($pdo, $form['title'], $form['author'], $isEdit ? (int) $id : 0);
+                    } catch (PDOException $ignored) {
+                        $duplicate = null;
+                    }
+                    $errors[] = "Bu nomi va muallifli kitob katalogda allaqachon mavjud.";
+                } else {
+                    error_log('[Kutubxona-ARM] Kitobni saqlashda xatolik: ' . $ex->getMessage());
+                    $errors[] = "Kitobni saqlashda xatolik yuz berdi. (007-migratsiya ishga tushirilganmi?)";
+                }
             }
         }
     }
@@ -308,8 +396,27 @@ $formAction = 'admin/book_form.php' . ($isEdit ? '?id=' . (int) $id : '');
         </div>
     <?php endif; ?>
 
+    <?php if ($duplicate !== null): ?>
+        <!-- Takror topildi: mavjud kitobni tahrirlashga havola -->
+        <div class="mb-4 border border-amber-300 bg-amber-50 text-amber-900 rounded-md px-4 py-3 text-sm">
+            <div class="font-bold mb-1">📚 Bu kitob katalogda bor</div>
+            <p>
+                <b><?= e($duplicate['title']) ?></b> – <?= e($duplicate['author']) ?>
+                (ID: #<?= (int) $duplicate['id'] ?>, bo'sh nusxalar:
+                <?= (int) $duplicate['available_copies'] ?> / <?= (int) $duplicate['copies'] ?>).
+            </p>
+            <p class="mt-1 text-amber-800">
+                Yangi nusxa qo'shmoqchi bo'lsangiz, shu kitobni tahrirlab <b>«Nusxalar soni»</b> ni oshiring.
+            </p>
+            <a href="<?= e(url('admin/book_form.php?id=' . (int) $duplicate['id'])) ?>"
+               class="inline-block mt-2 bg-amber-600 hover:bg-amber-700 text-white rounded-md px-3 py-1.5 text-xs font-semibold">
+                ✏️ Mavjud kitobni tahrirlash
+            </a>
+        </div>
+    <?php endif; ?>
+
     <!-- enctype="multipart/form-data" – rasm yuklash uchun shart -->
-    <form method="post" action="<?= e(url($formAction)) ?>" enctype="multipart/form-data" novalidate>
+    <form method="post" action="<?= e(url($formAction)) ?>" enctype="multipart/form-data" novalidate id="bookForm">
         <?= csrfField() ?>
 
         <label for="title" class="block text-sm font-bold mt-3 mb-1">Kitob nomi</label>
@@ -376,11 +483,43 @@ $formAction = 'admin/book_form.php' . ($isEdit ? '?id=' . (int) $id : '');
                class="w-full text-sm">
         <p class="text-xs text-slate-500 mt-1">JPG, PNG yoki WEBP, eng ko'pi 2 MB.</p>
 
-        <button type="submit"
-                class="w-full mt-5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md py-2.5">
+        <button type="submit" id="bookSubmit"
+                class="w-full mt-5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed
+                       text-white font-semibold rounded-md py-2.5">
             <?= $isEdit ? 'Saqlash' : "Qo'shish" ?>
         </button>
     </form>
 </div>
+
+<!-- ====== IKKI MARTA BOSISHDAN HIMOYA ======
+     Tugma bosilgach o'chadi, shuning uchun tez-tez bosilganda bir xil kitob ikki marta yozilmaydi. -->
+<script>
+(function () {
+    'use strict';
+
+    var form   = document.getElementById('bookForm');
+    var button = document.getElementById('bookSubmit');
+    if (!form || !button) { return; }
+
+    var sent = false;
+
+    form.addEventListener('submit', function (event) {
+        if (sent) {
+            event.preventDefault();   // forma allaqachon yuborilgan
+            return;
+        }
+        sent = true;
+        button.disabled = true;
+        button.textContent = 'Saqlanmoqda…';
+    });
+
+    // "Orqaga" tugmasi bilan qaytilganda tugma yana ishlasin
+    window.addEventListener('pageshow', function () {
+        sent = false;
+        button.disabled = false;
+        button.textContent = <?= json_encode($isEdit ? 'Saqlash' : "Qo'shish", JSON_UNESCAPED_UNICODE) ?>;
+    });
+})();
+</script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
