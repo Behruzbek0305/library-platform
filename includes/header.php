@@ -4,15 +4,19 @@
  *  Fayl: includes/header.php
  *  Vazifasi: Sahifaning yuqori qismi (<head>, menyu, flash xabarlar).
  *
+ *  ZAMONAVIY DIZAYN:
+ *    - Manrope shrifti (Google Fonts) va Tailwind uchun maxsus rang (ink)
+ *    - yarim shaffof (blur) sticky sarlavha, logotip belgisi
+ *    - faol menyu bandi to'q (ink) kapsula ko'rinishida
+ *
  *  Menyu ikki ko'rinishda:
  *    - kompyuter (1024px dan keng): sarlavhaning ichida bir qatorda
- *    - telefon va planshet: ☰ tugmasi bosilganda o'ng tomondan
- *      ixcham yon panel (drawer) ochiladi, orqa fon qoraroq bo'ladi
- *  Yon panelning ishlashi: assets/js/menu.js
+ *    - telefon va planshet: ☰ tugmasi bosilganda o'ng tomondan ochiladigan
+ *      ixcham yon panel (drawer). Ishlashi: assets/js/menu.js (id'lar o'zgarmagan)
  *
- *  YANGI: flash xabarlar (success / error / info) endi sahifa yangilanishini
- *  kutmaydi – bir necha soniyadan keyin o'zi asta-sekin xiralashib yo'qoladi:
- *    - muvaffaqiyat va ma'lumot xabarlari ~6 soniya, xatolar ~10 soniya
+ *  FLASH XABARLAR (success / error / info) o'zi yo'qoladi:
+ *    - bir necha soniyadan keyin asta-sekin xiralashib yo'qoladi
+ *      (vaqt pastdagi DURATION ob'ektida: har tur uchun alohida o'zgartiriladi)
  *    - sichqoncha ustida yoki tugma fokusda turganda vaqt to'xtaydi
  *    - ✕ tugmasi bilan darhol yopish mumkin
  *    - yo'qolganda pastdagi kontent birdan sakramaydi, silliq ko'tariladi
@@ -42,9 +46,9 @@ $navItems = [
     ['file' => 'cabinet.php',     'label' => "Mening kabinetim",      'show' => $user !== null && $user['role'] === 'talaba'],
     ['file' => 'admin/index.php', 'label' => "Band qilishlar",        'show' => isAdmin()],
     ['file' => 'admin/books.php', 'label' => "Kitoblarni boshqarish", 'show' => isAdmin()],
-    ['file' => 'admin/students.php', 'label' => "Talabalar", 'show' => isAdmin()],
+    ['file' => 'admin/students.php', 'label' => "Talabalar",          'show' => isAdmin()],
     // Faqat Superadmin ko'radi (oddiy admin va talabaga menyuda chiqmaydi)
-    ['file' => 'admin/staff.php', 'label' => "Xodimlar", 'show' => isSuperAdmin()],
+    ['file' => 'admin/staff.php', 'label' => "Xodimlar",              'show' => isSuperAdmin()],
     ['file' => 'login.php',       'label' => "Kirish",                'show' => $user === null],
     ['file' => 'register.php',    'label' => "Ro'yxatdan o'tish",     'show' => $user === null],
 ];
@@ -54,14 +58,14 @@ $visibleNav = array_filter($navItems, static fn(array $item): bool => $item['sho
 
 // Faol va oddiy havola uchun Tailwind sinflari
 $navLinkClass = static fn(bool $active): string => $active
-    ? 'bg-blue-50 text-blue-600'
-    : 'text-slate-700 hover:bg-blue-50 hover:text-blue-600';
+    ? 'bg-ink text-white'
+    : 'text-slate-600 hover:bg-slate-100 hover:text-ink';
 
 // Flash xabarlar uchun Tailwind ranglari
 $flashColors = [
-    'success' => 'bg-green-50 text-green-800 border-green-300',
-    'error'   => 'bg-red-50 text-red-800 border-red-300',
-    'info'    => 'bg-blue-50 text-blue-800 border-blue-300',
+    'success' => 'bg-green-50 text-green-800 border-green-200',
+    'error'   => 'bg-red-50 text-red-800 border-red-200',
+    'info'    => 'bg-blue-50 text-blue-800 border-blue-200',
 ];
 ?>
 <!DOCTYPE html>
@@ -72,23 +76,56 @@ $flashColors = [
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= e($pageTitle) ?> – Kutubxona ARM</title>
 
+    <!-- Manrope shrifti: o'zbek lotin harflari (oʻ, gʻ) uchun ham chiroyli -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
     <!-- Tailwind CSS (CDN orqali) -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Loyiha uchun umumiy shrift va rang (ink – to'q ko'k, sarlavha va tugmalar uchun)
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Manrope', 'ui-sans-serif', 'system-ui', 'sans-serif']
+                    },
+                    colors: {
+                        ink: {
+                            DEFAULT: '#0b1f3a',
+                            800: '#12294b',
+                            700: '#1b3763'
+                        }
+                    }
+                }
+            }
+        };
+    </script>
 </head>
-<body class="min-h-screen flex flex-col bg-slate-100 text-slate-800">
+<body class="min-h-screen flex flex-col bg-slate-50 text-slate-800 antialiased">
 
     <!-- ====== SAYT SARLAVHASI ====== -->
-    <header class="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div class="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
+    <header class="bg-white/85 backdrop-blur border-b border-slate-200 sticky top-0 z-10">
+        <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
 
-            <!-- Logotip -->
-            <a href="<?= e(url('index.php')) ?>" class="text-xl font-bold text-blue-600 whitespace-nowrap">📚 Kutubxona ARM</a>
+            <!-- Logotip: kitob belgisi + nom -->
+            <a href="<?= e(url('index.php')) ?>" class="flex items-center gap-2.5 whitespace-nowrap">
+                <span class="grid place-items-center w-9 h-9 rounded-xl bg-ink text-amber-300" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15Z"/>
+                        <path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/>
+                    </svg>
+                </span>
+                <span class="text-lg font-extrabold tracking-tight text-ink">Kutubxona ARM</span>
+            </a>
 
             <!-- Kompyuter menyusi (1024px dan keng ekranda ko'rinadi) -->
             <nav class="hidden lg:flex items-center gap-1" aria-label="Asosiy menyu">
                 <?php foreach ($visibleNav as $item): ?>
                     <a href="<?= e(url($item['file'])) ?>"
-                       class="px-3 py-2 rounded-md text-[15px] whitespace-nowrap <?= $navLinkClass($currentPath === $item['file']) ?>">
+                       class="px-3.5 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-colors <?= $navLinkClass($currentPath === $item['file']) ?>">
                         <?= e($item['label']) ?>
                     </a>
                 <?php endforeach; ?>
@@ -98,7 +135,7 @@ $flashColors = [
                     <form method="post" action="<?= e(url('logout.php')) ?>" class="ml-2">
                         <?= csrfField() ?>
                         <button type="submit"
-                                class="px-3 py-2 rounded-md text-[15px] whitespace-nowrap text-red-600 hover:bg-red-50">
+                                class="px-3.5 py-2 rounded-full text-sm font-semibold whitespace-nowrap text-red-600 hover:bg-red-50 transition-colors">
                             Chiqish
                         </button>
                     </form>
@@ -108,7 +145,7 @@ $flashColors = [
             <!-- ☰ tugmasi (telefon va planshetda ko'rinadi) -->
             <button type="button" id="menuToggle"
                     aria-label="Menyuni ochish" aria-expanded="false" aria-controls="drawer"
-                    class="lg:hidden border border-slate-300 rounded-md px-3 py-1 text-xl hover:bg-slate-50">☰</button>
+                    class="lg:hidden grid place-items-center w-10 h-10 border border-slate-200 rounded-xl text-xl text-ink hover:bg-slate-50">☰</button>
         </div>
     </header>
 
@@ -116,7 +153,7 @@ $flashColors = [
          Sarlavhadan tashqarida turadi, shunda u hamma narsaning ustida ko'rinadi.
          "inert" – yopiq paytda ichidagi havolalarga Tab bilan o'tib bo'lmasligi uchun. -->
     <div id="drawerBackdrop"
-         class="fixed inset-0 z-40 bg-black/40 opacity-0 pointer-events-none transition-opacity duration-200 lg:hidden"
+         class="fixed inset-0 z-40 bg-ink/50 opacity-0 pointer-events-none transition-opacity duration-200 lg:hidden"
          aria-hidden="true"></div>
 
     <aside id="drawer" role="dialog" aria-modal="true" aria-label="Asosiy menyu" inert
@@ -124,10 +161,10 @@ $flashColors = [
                   translate-x-full transition-transform duration-200 flex flex-col lg:hidden">
 
         <!-- Yon panel sarlavhasi va yopish tugmasi -->
-        <div class="h-14 px-4 flex items-center justify-between border-b border-slate-200 shrink-0">
-            <span class="font-bold text-blue-600">Menyu</span>
+        <div class="h-16 px-4 flex items-center justify-between border-b border-slate-200 shrink-0">
+            <span class="font-extrabold text-ink">Menyu</span>
             <button type="button" id="drawerClose" aria-label="Menyuni yopish"
-                    class="rounded-md px-2.5 py-1 text-xl text-slate-500 hover:bg-slate-100">✕</button>
+                    class="rounded-lg px-2.5 py-1 text-xl text-slate-500 hover:bg-slate-100">✕</button>
         </div>
 
         <?php if ($user !== null): ?>
@@ -142,7 +179,7 @@ $flashColors = [
         <nav class="flex-1 overflow-y-auto p-3 flex flex-col gap-1" aria-label="Telefon menyusi">
             <?php foreach ($visibleNav as $item): ?>
                 <a href="<?= e(url($item['file'])) ?>"
-                   class="px-3 py-2.5 rounded-md text-[15px] <?= $navLinkClass($currentPath === $item['file']) ?>">
+                   class="px-3.5 py-2.5 rounded-xl text-[15px] font-semibold <?= $navLinkClass($currentPath === $item['file']) ?>">
                     <?= e($item['label']) ?>
                 </a>
             <?php endforeach; ?>
@@ -153,7 +190,7 @@ $flashColors = [
             <form method="post" action="<?= e(url('logout.php')) ?>" class="p-3 border-t border-slate-200 shrink-0">
                 <?= csrfField() ?>
                 <button type="submit"
-                        class="w-full px-3 py-2.5 rounded-md text-[15px] text-red-600 border border-red-200 hover:bg-red-50">
+                        class="w-full px-3 py-2.5 rounded-xl text-[15px] font-semibold text-red-600 border border-red-200 hover:bg-red-50">
                     Chiqish
                 </button>
             </form>
@@ -170,7 +207,7 @@ $flashColors = [
         <?php foreach ($flashList as $flash): ?>
             <?php $flashType = isset($flashColors[$flash['type']]) ? (string) $flash['type'] : 'info'; ?>
             <div data-flash="<?= e($flashType) ?>" role="<?= $flashType === 'error' ? 'alert' : 'status' ?>"
-                 class="mb-4 border rounded-md px-4 py-3 flex items-start justify-between gap-3 <?= e($flashColors[$flashType]) ?>">
+                 class="mb-4 border rounded-xl px-4 py-3 text-sm font-medium flex items-start justify-between gap-3 <?= e($flashColors[$flashType]) ?>">
                 <div class="min-w-0 break-words"><?= e($flash['message']) ?></div>
                 <button type="button" data-flash-close aria-label="Xabarni yopish"
                         class="shrink-0 -my-1 -mr-1 rounded px-2 py-0.5 text-lg leading-none opacity-60 hover:opacity-100">✕</button>
@@ -184,7 +221,8 @@ $flashColors = [
             (function () {
                 'use strict';
 
-                // Necha millisekunddan keyin yo'qolishi (xato uzoqroq turadi – o'qib ulgurish uchun)
+                // Necha millisekunddan keyin yo'qolishi (har tur uchun alohida o'zgartiring).
+                // Masalan, xato uzoqroq tursin desangiz: error: 10000
                 var DURATION = { success: 3000, info: 3000, error: 3000 };
                 var FADE_MS  = 600;   // yo'qolish animatsiyasi davomiyligi
 

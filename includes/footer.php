@@ -9,11 +9,15 @@
  *    menu.js         – telefon uchun yon panel (drawer)
  *    live-search.js  – qidiruvda yozish paytidagi tavsiyalar
  *    book-modal.js   – kitob kartochkasi bosilganda qalqib chiqadigan oyna
+ *    hemis.js        – HEMIS ID tekshiruvi va nusxalash
  *
- *  1-bosqich: kitob oynasi (modal) shu yerda joylashgan. Oynaning ichini
- *  book-modal.js to'ldiradi; bu yerda faqat bo'sh qolip va "Band qilish"
- *  formasi (CSRF token bilan) turadi. Band qilishning o'zi avvalgidek
- *  reserve.php orqali bajariladi.
+ *  YANGI: to'liq 4 ustunli zamonaviy footer (brend, bo'limlar, foydalanuvchi
+ *  roliga qarab havolalar, aloqa). Aloqa ma'lumotlarini quyidagi
+ *  $libraryContact massivida o'zgartiring – bo'sh qoldirilgan qator chiqmaydi.
+ *
+ *  1-bosqich: kitob oynasi (modal) shu yerda joylashgan (o'zgarmagan). Oynaning
+ *  ichini book-modal.js to'ldiradi; bu yerda faqat bo'sh qolip va "Band qilish"
+ *  formasi (CSRF token bilan) turadi. Band qilishning o'zi reserve.php orqali bajariladi.
  * ============================================================
  */
 
@@ -31,6 +35,44 @@ $modalRole  = $footerUser === null
 
 // JS kelgan-ketganini tekshiramiz (footer.php skriptni shu manzildan ulaydi)
 $hasBookModalJs = is_readable(__DIR__ . '/../assets/js/book-modal.js');
+
+// ------------------------------------------------------------
+// FOOTER MA'LUMOTLARI
+// ------------------------------------------------------------
+
+// Aloqa ma'lumotlari: O'ZINGIZNIKIGA ALMASHTIRING. Bo'sh ('') qoldirilgan qator footerda chiqmaydi.
+$libraryContact = [
+    'Manzil'    => 'Universitet axborot resurs markazi, 1-qavat',
+    'Ish vaqti' => 'Dushanba – Juma, 09:00 – 18:00',
+    'Telefon'   => '',
+    'Email'     => '',
+];
+
+// "Foydalanuvchi" ustunidagi havolalar roliga qarab o'zgaradi: [manzil, yozuv]
+if ($modalRole === 'admin') {
+    $footerAccountTitle = 'Kutubxonachi uchun';
+    $footerAccountLinks = [
+        ['admin/index.php',    'Band qilishlar'],
+        ['admin/books.php',    'Kitoblarni boshqarish'],
+        ['admin/students.php', 'Talabalar'],
+    ];
+} elseif ($modalRole === 'student') {
+    $footerAccountTitle = 'Talabalar uchun';
+    $footerAccountLinks = [
+        ['cabinet.php',   'Mening kabinetim'],
+        ['resources.php', 'Elektron resurslar'],
+        ['profile.php',   "Mening ma'lumotlarim"],
+    ];
+} else {
+    $footerAccountTitle = 'Talabalar uchun';
+    $footerAccountLinks = [
+        ['register.php', "Ro'yxatdan o'tish"],
+        ['login.php',    'Kirish'],
+    ];
+}
+
+// Footerdagi havola uchun umumiy Tailwind sinflari
+$footerLink = 'text-slate-300 hover:text-white transition-colors';
 ?>
     </main>
 
@@ -229,9 +271,90 @@ $hasBookModalJs = is_readable(__DIR__ . '/../assets/js/book-modal.js');
         </div>
     </div>
 
-    <!-- ====== SAYT OSTKI QISMI ====== -->
-    <footer class="bg-white border-t border-slate-200 py-4 text-center text-sm text-slate-500">
-        © <?= date('Y') ?> Kutubxona – axborot resurs markazi. Talabalar loyihasi.
+    <!-- ====== SAYT OSTKI QISMI (FOOTER) ====== -->
+    <footer class="mt-16 bg-ink text-slate-300">
+        <div class="max-w-6xl mx-auto px-4 pt-12 pb-8">
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1.2fr] gap-10">
+
+                <!-- 1) Brend va qisqa tavsif -->
+                <div>
+                    <a href="<?= e(url('index.php')) ?>" class="inline-flex items-center gap-2.5">
+                        <span class="grid place-items-center w-9 h-9 rounded-xl bg-white/10 text-amber-300" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
+                                 stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15Z"/>
+                                <path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/>
+                            </svg>
+                        </span>
+                        <span class="text-lg font-extrabold tracking-tight text-white">Kutubxona ARM</span>
+                    </a>
+                    <p class="mt-4 max-w-xs text-sm leading-relaxed text-slate-400">
+                        Universitet talabalari uchun onlayn kutubxona: katalog, kitobni oldindan
+                        band qilish va elektron resurslar bir joyda.
+                    </p>
+                </div>
+
+                <!-- 2) Bo'limlar -->
+                <div>
+                    <h3 class="text-sm font-bold text-white">Bo'limlar</h3>
+                    <ul class="mt-4 space-y-2.5 text-sm">
+                        <li><a href="<?= e(url('index.php')) ?>" class="<?= $footerLink ?>">Bosh sahifa</a></li>
+                        <li><a href="<?= e(url('catalog.php')) ?>" class="<?= $footerLink ?>">Katalog</a></li>
+                        <?php foreach (BOOK_CATEGORIES as $footerCat): ?>
+                            <li>
+                                <a href="<?= e(url('catalog.php?category=' . urlencode($footerCat))) ?>"
+                                   class="<?= $footerLink ?>"><?= e($footerCat) ?></a>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
+
+                <!-- 3) Foydalanuvchi roliga qarab havolalar -->
+                <div>
+                    <h3 class="text-sm font-bold text-white"><?= e($footerAccountTitle) ?></h3>
+                    <ul class="mt-4 space-y-2.5 text-sm">
+                        <?php foreach ($footerAccountLinks as [$linkPath, $linkText]): ?>
+                            <li><a href="<?= e(url($linkPath)) ?>" class="<?= $footerLink ?>"><?= e($linkText) ?></a></li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
+
+                <!-- 4) Aloqa (faqat to'ldirilgan qatorlar chiqadi) -->
+                <div>
+                    <h3 class="text-sm font-bold text-white">Aloqa</h3>
+                    <dl class="mt-4 space-y-3 text-sm">
+                        <?php foreach ($libraryContact as $contactLabel => $contactValue): ?>
+                            <?php if (trim($contactValue) === '') { continue; } ?>
+                            <div>
+                                <dt class="text-xs text-slate-500"><?= e($contactLabel) ?></dt>
+                                <dd class="text-slate-200">
+                                    <?php if ($contactLabel === 'Email'): ?>
+                                        <a href="mailto:<?= e($contactValue) ?>" class="hover:text-white"><?= e($contactValue) ?></a>
+                                    <?php elseif ($contactLabel === 'Telefon'): ?>
+                                        <a href="tel:<?= e(preg_replace('/[^0-9+]/', '', $contactValue)) ?>" class="hover:text-white"><?= e($contactValue) ?></a>
+                                    <?php else: ?>
+                                        <?= e($contactValue) ?>
+                                    <?php endif; ?>
+                                </dd>
+                            </div>
+                        <?php endforeach; ?>
+                    </dl>
+                </div>
+            </div>
+
+            <!-- Pastki qator: mualliflik va tepaga qaytish -->
+            <div class="mt-10 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-slate-400">
+                <p>© <?= date('Y') ?> Kutubxona – axborot resurs markazi. Talabalar loyihasi.</p>
+                <a href="#" class="inline-flex items-center gap-1.5 hover:text-white transition-colors">
+                    Yuqoriga
+                    <svg viewBox="0 0 24 24" aria-hidden="true" class="w-4 h-4" fill="none" stroke="currentColor"
+                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="m6 15 6-6 6 6"/>
+                    </svg>
+                </a>
+            </div>
+        </div>
     </footer>
 
     <?php /* ============================================================
