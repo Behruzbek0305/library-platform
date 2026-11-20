@@ -235,6 +235,122 @@ function renderBookCard(array $book): void
     </a>
     <?php
 }
+// ------------------------------------------------------------
+// 3.01. YANGI DIZAYNDAGI KITOB KARTOCHKASI (index.php va catalog.php uchun umumiy)
+//       Bosilganda kitob oynasi (book-modal.js) ochiladi: bookDataAttrs() kerakli
+//       data-atributlarni qo'yadi, JavaScript o'chiq bo'lsa havola kitob sahifasiga olib boradi.
+// ------------------------------------------------------------
+function renderModernBookCard(array $book): void
+{
+    $style     = categoryStyle((string) $book['category']);
+    $available = (int) $book['available_copies'];
+    ?>
+    <a href="<?= e(url('book.php?id=' . (int) $book['id'])) ?>" <?= bookDataAttrs($book) ?>
+       class="group flex flex-col bg-white border border-slate-200 rounded-2xl overflow-hidden
+              hover:border-slate-300 hover:shadow-xl hover:shadow-slate-900/5 transition">
+
+        <!-- Muqova: rasm to'liq ko'rinadi (kesilmaydi), bo'lmasa kategoriya belgisi -->
+        <div class="relative h-56 flex items-center justify-center text-6xl <?= e($style['bg']) ?>">
+            <?php if (!empty($book['cover_image'])): ?>
+                <img src="<?= e(url((string) $book['cover_image'])) ?>" alt="<?= e($book['title']) ?>"
+                     class="h-full w-full object-contain">
+            <?php else: ?>
+                <?= $style['emoji'] ?>
+            <?php endif; ?>
+
+            <!-- Mavjudlik belgisi: rangli nuqta + matn -->
+            <span class="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-white/95 px-2.5 py-1 text-xs font-semibold shadow-sm
+                         <?= $available > 0 ? 'text-green-700' : 'text-red-700' ?>">
+                <span class="w-1.5 h-1.5 rounded-full <?= $available > 0 ? 'bg-green-500' : 'bg-red-500' ?>"></span>
+                <?= $available > 0 ? 'Bor: ' . $available . ' ta' : "Hozir yo'q" ?>
+            </span>
+        </div>
+
+        <div class="flex-1 p-4">
+            <h3 class="font-bold leading-snug text-ink line-clamp-2"><?= e($book['title']) ?></h3>
+            <p class="mt-1 text-sm text-slate-500 line-clamp-1"><?= e($book['author']) ?></p>
+
+            <div class="mt-3 flex flex-wrap gap-1.5">
+                <span class="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
+                    <?= e($book['category']) ?>
+                </span>
+                <?php if (!empty($book['field'])): ?>
+                    <span class="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">
+                        <?= e($book['field']) ?>
+                    </span>
+                <?php endif; ?>
+            </div>
+        </div>
+    </a>
+    <?php
+}
+
+// ------------------------------------------------------------
+// 3.02. MAXSUS FILTR DROPDOWN (index.php va catalog.php uchun umumiy)
+//       Oddiy <select> o'rniga: bosilganda chiroyli ro'yxat ochiladi,
+//       chevron tepaga buriladi (assets/js/dropdown.js boshqaradi).
+//       Tanlangan qiymat yashirin <input name="..."> da turadi, shuning uchun
+//       forma GET orqali avvalgidek yuboriladi.
+//
+//  $name     – GET parametr nomi (field / category / genre)
+//  $label    – select ustidagi kichik yozuv
+//  $allLabel – "hammasi" varianti matni (qiymati bo'sh)
+//  $options  – variantlar ro'yxati (matn massivi)
+//  $selected – hozir tanlangan qiymat ('' = hech biri)
+// ------------------------------------------------------------
+function renderFilterDropdown(string $name, string $label, string $allLabel, array $options, string $selected): void
+{
+    $id        = 'dd_' . $name;
+    $current   = $selected !== '' ? $selected : $allLabel;
+    $all       = array_merge(['' => $allLabel], array_combine($options, $options) ?: []);
+    $check     = '<svg viewBox="0 0 24 24" aria-hidden="true" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" '
+               . 'stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg>';
+    ?>
+    <div class="relative min-w-0" data-dropdown>
+        <span id="<?= e($id) ?>_label"
+              class="block mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-300"><?= e($label) ?></span>
+
+        <!-- Tanlangan qiymat shu yerda turadi va formaga qo'shiladi -->
+        <input type="hidden" name="<?= e($name) ?>" value="<?= e($selected) ?>" data-dropdown-input>
+
+        <!-- Tugma: select ko'rinishida. aria-expanded="true" bo'lsa chevron tepaga buriladi -->
+        <button type="button" data-dropdown-toggle aria-haspopup="listbox" aria-expanded="false"
+                aria-labelledby="<?= e($id) ?>_label <?= e($id) ?>_btn" id="<?= e($id) ?>_btn"
+                class="group flex h-11 w-full items-center justify-between gap-2 rounded-xl border border-white/20
+                       bg-white/10 px-3 text-left text-sm text-white transition-colors hover:bg-white/15
+                       focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60
+                       aria-expanded:border-amber-300/60 aria-expanded:bg-white/15">
+            <span class="truncate <?= $selected === '' ? 'text-slate-200' : 'font-semibold' ?>"><?= e($current) ?></span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"
+                 class="w-4 h-4 shrink-0 transition-transform duration-200 group-aria-expanded:rotate-180"
+                 fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m6 9 6 6 6-6"/>
+            </svg>
+        </button>
+
+        <!-- Ochiladigan ro'yxat -->
+        <ul role="listbox" data-dropdown-panel aria-labelledby="<?= e($id) ?>_label"
+            class="hidden absolute left-0 right-0 top-full z-30 mt-2 max-h-64 overflow-y-auto rounded-xl border
+                   border-slate-200 bg-white p-1.5 text-slate-700 shadow-xl shadow-slate-900/20">
+            <?php foreach ($all as $value => $text): ?>
+                <?php $isSel = ((string) $value === $selected); ?>
+                <li role="presentation">
+                    <button type="button" role="option" data-value="<?= e((string) $value) ?>"
+                            aria-selected="<?= $isSel ? 'true' : 'false' ?>"
+                            class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm
+                                   focus:outline-none
+                                   <?= $isSel
+                                       ? 'bg-ink font-semibold text-white'
+                                       : 'hover:bg-slate-100 focus:bg-slate-100' ?>">
+                        <span class="truncate"><?= e((string) $text) ?></span>
+                        <?php if ($isSel): ?><span class="text-amber-300"><?= $check ?></span><?php endif; ?>
+                    </button>
+                </li>
+            <?php endforeach; ?>
+        </ul>
+    </div>
+    <?php
+}
 
 // ------------------------------------------------------------
 // 3.0. KITOB QATORI – RO'YXAT KO'RINISHI (qidiruv natijalari uchun)

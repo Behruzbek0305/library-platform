@@ -204,8 +204,9 @@ function renderBookButton(array $r): void
 
 /**
  * Holatga qarab amal tugmalari.
+ * Har bir tugma TASDIQ OYNASI orqali ishlaydi (assets/js/confirm-action.js):
+ * oynada talaba va kitob nomi ko'rsatiladi, shuning uchun tasodifan bosish xavfsiz.
  * "Tasdiqlash" formasida QAYTARISH KUNINI tanlash maydoni bor (1/2/3/5/10 kun).
- * Kompyuter jadvalida tugmalar ustma-ust (tor ustun), telefonda yonma-yon.
  */
 function renderActions(array $r, array $filters, bool $compact): void
 {
@@ -217,25 +218,39 @@ function renderActions(array $r, array $filters, bool $compact): void
 
     $size = $compact ? 'w-full text-sm py-2' : 'w-full text-xs px-2.5 py-1.5 whitespace-nowrap';
 
-    // [amal, yozuv, rang, tasdiq matni]
+    // Oynada ko'rinadigan "kim va qaysi kitob" matni
+    $who = '«' . $r['book_title'] . '» — ' . $r['user_name'];
+
+    // [amal, yozuv, rang, oyna sarlavhasi, oyna matni, tasdiq tugmasi yozuvi, rang turi, kutish (ms)]
     $buttons = $status === 'kutilmoqda'
         ? [
-            ['approve', 'Tasdiqlash', 'bg-green-600 hover:bg-green-700', null],
-            ['reject',  'Rad etish',  'bg-red-600 hover:bg-red-700',
-                "Bu band qilishni rad etmoqchimisiz? Talaba kabinetida 'Rad etildi' deb ko'rinadi."],
+            ['approve', 'Tasdiqlash', 'bg-green-600 hover:bg-green-700',
+                'Band qilish tasdiqlansinmi?',
+                $who . '. Kitob talabaga beriladi.',
+                'Ha, tasdiqlash', 'ok', 800],
+            ['reject', 'Rad etish', 'bg-red-600 hover:bg-red-700',
+                'Band qilish rad etilsinmi?',
+                $who . '. Talaba kabinetida «Rad etildi» deb ko\'rinadi, nusxa bo\'shatiladi.',
+                'Ha, rad etish', 'danger', 1200],
         ]
         : [
-            ['return', 'Qaytarildi', 'bg-blue-600 hover:bg-blue-700', null],
+            ['return', 'Qaytarildi', 'bg-blue-600 hover:bg-blue-700',
+                'Kitob qaytarildimi?',
+                $who . '. Kitob qabul qilindi deb belgilanadi va nusxa yana bo\'sh bo\'ladi.',
+                'Ha, qabul qilindi', 'warn', 1000],
         ];
 
-    echo '<div class="' . ($compact ? 'grid grid-cols-' . count($buttons) . ' gap-2' : 'flex flex-col gap-1.5') . '">';
+    // Tugmalar orasida katta masofa (gap-3) – yonma-yon bosib yuborish ehtimoli kamayadi
+    echo '<div class="' . ($compact ? 'grid grid-cols-' . count($buttons) . ' gap-3' : 'flex flex-col gap-3') . '">';
 
-    foreach ($buttons as [$action, $label, $color, $confirmText]) {
-        $onsubmit = $confirmText !== null
-            ? ' onsubmit="' . e('return confirm(' . json_encode($confirmText, JSON_UNESCAPED_UNICODE) . ');') . '"'
-            : '';
+    foreach ($buttons as [$action, $label, $color, $cTitle, $cText, $cOk, $cTone, $cDelay]) {
         ?>
-        <form method="post" action="<?= e(url('admin/index.php')) ?>"<?= $onsubmit ?>>
+        <form method="post" action="<?= e(url('admin/index.php')) ?>" data-once
+              data-confirm-title="<?= e($cTitle) ?>"
+              data-confirm-text="<?= e($cText) ?>"
+              data-confirm-ok="<?= e($cOk) ?>"
+              data-confirm-tone="<?= e($cTone) ?>"
+              data-confirm-delay="<?= (int) $cDelay ?>">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="<?= e($action) ?>">
             <input type="hidden" name="reservation_id" value="<?= (int) $r['id'] ?>">
@@ -246,9 +261,10 @@ function renderActions(array $r, array $filters, bool $compact): void
             <input type="hidden" name="code" value="<?= e($filters['code']) ?>">
 
             <?php if ($action === 'approve'): ?>
-                <!-- Qaytarish kunini kutubxonachi tanlaydi (server qiymatni qayta tekshiradi) -->
+                <!-- Qaytarish kunini kutubxonachi tanlaydi; tanlangan qiymat tasdiq oynasida ham ko'rinadi -->
                 <label class="block text-[11px] text-slate-500 mb-0.5">Necha kunga beriladi?</label>
-                <select name="loan_days" aria-label="Necha kunga beriladi (qaytarish muddati)"
+                <select name="loan_days" data-confirm-show="Berish muddati"
+                        aria-label="Necha kunga beriladi (qaytarish muddati)"
                         class="w-full mb-1 border border-slate-300 rounded-md px-1.5 py-1 bg-white text-xs
                                focus:outline-none focus:ring-2 focus:ring-green-300">
                     <?php foreach (OFFLINE_DAY_OPTIONS as $day): ?>

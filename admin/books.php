@@ -179,14 +179,14 @@ function renderBookTags(array $b): void
 /**
  * Harakat tugmalari: Tahrirlash va O'chirish.
  * Kitob band qilingan yoki talabada bo'lsa, "O'chirish" o'chiq turadi.
+ * O'chirish – TASDIQ OYNASI orqali (qizil, uzoqroq kutish bilan): kitob ortga qaytmaydi.
  */
 function renderBookActions(array $b, array $filters, bool $full): void
 {
     $active   = (int) $b['pending_cnt'] + (int) $b['onhand_cnt'];
     $btnSize  = $full ? 'w-full text-sm py-2' : 'text-xs px-3 py-1.5 whitespace-nowrap';
-    $confirm  = '«' . $b['title'] . '» kitobini o\'chirishni xohlaysizmi? Bu amalni ortga qaytarib bo\'lmaydi.';
     ?>
-    <div class="<?= $full ? 'grid grid-cols-2 gap-2' : 'flex flex-col gap-1.5 items-stretch' ?>">
+    <div class="<?= $full ? 'grid grid-cols-2 gap-3' : 'flex flex-col gap-2.5 items-stretch' ?>">
         <a href="<?= e(url('admin/book_form.php?id=' . (int) $b['id'])) ?>"
            class="text-center bg-slate-700 hover:bg-slate-800 text-white rounded-md <?= e($btnSize) ?>">
             ✏️ Tahrirlash
@@ -200,8 +200,12 @@ function renderBookActions(array $b, array $filters, bool $full): void
                 🗑️ O'chirish
             </button>
         <?php else: ?>
-            <form method="post" action="<?= e(url('admin/books.php')) ?>"
-                  onsubmit="<?= e('return confirm(' . json_encode($confirm, JSON_UNESCAPED_UNICODE) . ');') ?>">
+            <form method="post" action="<?= e(url('admin/books.php')) ?>" data-once
+                  data-confirm-title="Kitob o'chirilsinmi?"
+                  data-confirm-text="<?= e('«' . $b['title'] . '» (' . $b['author'] . ') katalogdan butunlay o\'chiriladi. Bu amalni ortga qaytarib bo\'lmaydi.') ?>"
+                  data-confirm-ok="Ha, o'chirish"
+                  data-confirm-tone="danger"
+                  data-confirm-delay="1500">
                 <?= csrfField() ?>
                 <input type="hidden" name="delete_id" value="<?= (int) $b['id'] ?>">
                 <!-- O'chirgandan keyin shu filtrlar bilan qaytish uchun -->

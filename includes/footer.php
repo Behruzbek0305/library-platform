@@ -377,5 +377,9 @@ $footerLink = 'text-slate-300 hover:text-white transition-colors';
     <script src="<?= e(url('assets/js/book-modal.js')) ?>" defer></script>
     <!-- HEMIS ID ni bir bosishda nusxalash va maydonda faqat raqamga ruxsat berish -->
     <script src="<?= e(url('assets/js/hemis.js')) ?>" defer></script>
+    <!-- Filtr dropdown'lari: ochilganda chevron buriladi, tanlansa forma yuboriladi -->
+    <script src="<?= e(url('assets/js/dropdown.js')) ?>" defer></script>
+    <!-- Xavfli tugmalarni tasodifan bosishdan himoya (tasdiq oynasi, ikki marta yuborishdan himoya) -->
+    <script src="<?= e(url('assets/js/confirm-action.js')) ?>" defer></script>
 </body>
 </html>

@@ -374,8 +374,8 @@ function staffStatusBadge(bool $blocked): string
 }
 
 /**
- * Harakat tugmasi: faol xodimda qizil "Bloklash",
- * bloklangan xodimda sariq "Blokdan ochish". O'zingiz uchun – tugma yo'q.
+ * Harakat tugmasi: faol xodimda qizil "Bloklash", bloklangan xodimda sariq "Blokdan ochish".
+ * Ikkalasi ham TASDIQ OYNASI orqali ishlaydi. O'zingiz uchun – tugma yo'q.
  */
 function renderStaffAction(array $s, int $meId, bool $full): void
 {
@@ -390,13 +390,25 @@ function renderStaffAction(array $s, int $meId, bool $full): void
     $color   = $blocked ? 'bg-amber-500 hover:bg-amber-600' : 'bg-red-600 hover:bg-red-700';
     $size    = $full ? 'w-full text-sm py-2' : 'text-xs px-3 py-1.5 whitespace-nowrap';
 
-    // Bloklashdan oldin tasdiq so'raladi (matn json_encode bilan xavfsiz qo'yiladi)
-    $confirmText = '«' . $s['name'] . '» bloklansinmi? U tizimga kira olmaydi.';
-    $onsubmit    = $blocked
-        ? ''
-        : ' onsubmit="' . e('return confirm(' . json_encode($confirmText, JSON_UNESCAPED_UNICODE) . ');') . '"';
+    // Oyna matnlari amalga qarab o'zgaradi
+    if ($blocked) {
+        $cTitle = 'Xodim blokdan ochilsinmi?';
+        $cText  = '«' . $s['name'] . '» yana tizimga kira oladi va ishlay boshlaydi.';
+        $cOk    = 'Ha, blokdan ochish';
+        $cTone  = 'warn';
+    } else {
+        $cTitle = 'Xodim bloklansinmi?';
+        $cText  = '«' . $s['name'] . '» blokdan ochilmaguncha tizimga kira olmaydi.';
+        $cOk    = 'Ha, bloklash';
+        $cTone  = 'danger';
+    }
     ?>
-    <form method="post" action="<?= e(url('admin/staff.php')) ?>"<?= $onsubmit ?>>
+    <form method="post" action="<?= e(url('admin/staff.php')) ?>" data-once
+          data-confirm-title="<?= e($cTitle) ?>"
+          data-confirm-text="<?= e($cText) ?>"
+          data-confirm-ok="<?= e($cOk) ?>"
+          data-confirm-tone="<?= e($cTone) ?>"
+          data-confirm-delay="1000">
         <?= csrfField() ?>
         <input type="hidden" name="user_id" value="<?= (int) $s['id'] ?>">
         <input type="hidden" name="action" value="<?= e($action) ?>">
@@ -404,7 +416,6 @@ function renderStaffAction(array $s, int $meId, bool $full): void
     </form>
     <?php
 }
-
 // ------------------------------------------------------------
 // 5. SAHIFANI CHIZISH
 // ------------------------------------------------------------

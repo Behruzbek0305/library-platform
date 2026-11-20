@@ -11,16 +11,21 @@
  *    Janr (genre) – ularning ISTALGANI yoki istalgan kombinatsiyasi
  *    ishlaydi. Hech qaysi filtrni tanlash majburiy emas.
  *
- *  YANGI DIZAYN:
+ *  DIZAYN:
  *    - to'q ko'k banner: chap tomonda sarlavha va yirik qidiruv paneli,
  *      o'ng tomonda kitob javoni (faqat CSS bilan chizilgan, rasm yo'q)
+ *    - soha / kategoriya / janr: MAXSUS DROPDOWN'lar (catalog.php dagi bilan bir xil).
+ *      renderFilterDropdown() – includes/book_helpers.php, boshqaruv: assets/js/dropdown.js.
+ *      Bosilganda chiroyli ro'yxat ochiladi, chevron tepaga buriladi,
+ *      variant tanlansa filtr darhol qo'llanadi.
  *    - bannerning pastida bazadan olingan haqiqiy ko'rsatkichlar
- *    - yangilangan kitob kartochkasi, kategoriya kartochkalari
+ *    - kitob kartochkasi: includes/book_helpers.php dagi renderModernBookCard()
  *    - "Qanday ishlaydi" – 3 qadam; kirmaganlar uchun ro'yxatdan o'tish taklifi
  *
  *  Eslatma: avval migrations/007_field_genre.sql ni ishga tushiring.
- *  Qidiruv tavsiyalari oynasi (assets/js/live-search.js) forma ichida ochiladi,
- *  shuning uchun banner qismida overflow-hidden ISHLATILMAGAN (oyna kesilib qolmasin).
+ *  Qidiruv tavsiyalari oynasi (assets/js/live-search.js) va dropdown ro'yxatlari
+ *  forma ichida ochiladi, shuning uchun banner qismida overflow-hidden ISHLATILMAGAN
+ *  (fon alohida qatlamda, oynalar kesilib qolmasligi uchun).
  * ============================================================
  */
 
@@ -54,7 +59,7 @@ $stats = ['books' => 0, 'available' => 0, 'students' => 0];
 
 try {
     // --------------------------------------------------------
-    // 2. SELECT ro'yxatlari uchun qiymatlar – bazadan olinadi,
+    // 2. Dropdown ro'yxatlari uchun qiymatlar – bazadan olinadi,
     //    shuning uchun yangi soha/janr qo'shilsa, ro'yxatda o'zi chiqadi.
     // --------------------------------------------------------
     $fieldOptions = $pdo->query(
@@ -158,52 +163,9 @@ try {
 $isGuest = currentUser() === null;
 
 // ------------------------------------------------------------
-// 3.1. YORDAMCHI FUNKSIYALAR (faqat shu sahifa uchun)
+// 3.1. BANNER O'NG TOMONIDAGI KITOB JAVONI
+//      [balandlik, kenglik, rang, chiziq rangi, qiyalik]
 // ------------------------------------------------------------
-
-/**
- * Yangi dizayndagi kitob kartochkasi.
- * Bosilganda kitob oynasi (book-modal.js) ochiladi: bookDataAttrs() kerakli
- * data-atributlarni qo'yadi, JavaScript o'chiq bo'lsa havola kitob sahifasiga olib boradi.
- */
-function renderModernBookCard(array $book): void
-{
-    $style     = categoryStyle((string) $book['category']);
-    $available = (int) $book['available_copies'];
-    ?>
-    <a href="<?= e(url('book.php?id=' . (int) $book['id'])) ?>" <?= bookDataAttrs($book) ?>
-       class="group flex flex-col bg-white border border-slate-200 rounded-2xl overflow-hidden
-              hover:border-slate-300 hover:shadow-xl hover:shadow-slate-900/5 transition">
-
-        <!-- Muqova: rasm to'liq ko'rinadi (kesilmaydi), bo'lmasa kategoriya belgisi -->
-        <div class="relative h-56 flex items-center justify-center text-6xl <?= e($style['bg']) ?>">
-            <?php if (!empty($book['cover_image'])): ?>
-                <img src="<?= e(url((string) $book['cover_image'])) ?>" alt="<?= e($book['title']) ?>"
-                     class="h-full w-full object-contain">
-            <?php else: ?>
-                <?= $style['emoji'] ?>
-            <?php endif; ?>
-
-            <!-- Mavjudlik belgisi: rangli nuqta + matn -->
-            <span class="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-white/95 px-2.5 py-1 text-xs font-semibold shadow-sm
-                         <?= $available > 0 ? 'text-green-700' : 'text-red-700' ?>">
-                <span class="w-1.5 h-1.5 rounded-full <?= $available > 0 ? 'bg-green-500' : 'bg-red-500' ?>"></span>
-                <?= $available > 0 ? 'Bor: ' . $available . ' ta' : "Hozir yo'q" ?>
-            </span>
-        </div>
-
-        <div class="flex-1 p-4">
-            <h3 class="font-bold leading-snug text-ink line-clamp-2"><?= e($book['title']) ?></h3>
-            <p class="mt-1 text-sm text-slate-500 line-clamp-1"><?= e($book['author']) ?></p>
-            <span class="inline-block mt-3 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
-                <?= e($book['category']) ?>
-            </span>
-        </div>
-    </a>
-    <?php
-}
-
-// Banner o'ng tomonidagi kitob javoni: [balandlik, kenglik, rang, chiziq rangi, qiyalik]
 $spines = [
     ['h-40', 'w-9',  'bg-sky-300',    'bg-sky-500/60',    ''],
     ['h-56', 'w-11', 'bg-amber-300',  'bg-amber-500/60',  ''],
@@ -220,15 +182,11 @@ $spines = [
 // ------------------------------------------------------------
 $pageTitle = 'Bosh sahifa';
 require_once __DIR__ . '/includes/header.php';
-
-// Filtr maydonlari uchun umumiy Tailwind sinflari (to'q fonda shaffof ko'rinish)
-$selectClass = 'w-full min-w-0 h-11 rounded-xl border border-white/20 bg-white/10 px-3 text-sm text-white '
-             . 'focus:outline-none focus:ring-2 focus:ring-amber-300/60 [&>option]:text-slate-800';
 ?>
 
 <!-- ====== ASOSIY BANNER ======
      Fon alohida qatlamda (overflow-hidden shu qatlamda), shunda qidiruv tavsiyalari
-     oynasi bannerdan chiqib turganda kesilib qolmaydi. -->
+     va dropdown ro'yxatlari bannerdan chiqib turganda kesilib qolmaydi. -->
 <section class="relative rounded-3xl text-white">
 
     <!-- Fon: to'q ko'k va juda xira nuqtali to'r -->
@@ -253,7 +211,7 @@ $selectClass = 'w-full min-w-0 h-11 rounded-xl border border-white/20 bg-white/1
                  relative + data-live-search-root: yozish paytidagi tavsiyalar oynasi
                  forma kengligicha chiqadi (assets/js/live-search.js). -->
             <form method="get" action="<?= e(url('index.php')) ?>" id="filterForm" data-live-search-root
-                  class="relative mt-7 space-y-3">
+                  class="relative mt-7 space-y-4">
 
                 <!-- Yirik qidiruv maydoni: ichida lupa belgisi va "Qidirish" tugmasi -->
                 <div class="relative">
@@ -279,28 +237,13 @@ $selectClass = 'w-full min-w-0 h-11 rounded-xl border border-white/20 bg-white/1
                     </button>
                 </div>
 
-                <!-- Filtrlar: soha, kategoriya, janr -->
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <select name="field" aria-label="Soha bo'yicha filtr" class="<?= e($selectClass) ?>">
-                        <option value="">Barcha sohalar</option>
-                        <?php foreach ($fieldOptions as $opt): ?>
-                            <option value="<?= e($opt) ?>" <?= $opt === $field ? 'selected' : '' ?>><?= e($opt) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-
-                    <select name="category" aria-label="Kategoriya bo'yicha filtr" class="<?= e($selectClass) ?>">
-                        <option value="">Barcha kategoriyalar</option>
-                        <?php foreach (BOOK_CATEGORIES as $cat): ?>
-                            <option value="<?= e($cat) ?>" <?= $cat === $category ? 'selected' : '' ?>><?= e($cat) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-
-                    <select name="genre" aria-label="Janr bo'yicha filtr" class="<?= e($selectClass) ?>">
-                        <option value="">Barcha janrlar</option>
-                        <?php foreach ($genreOptions as $opt): ?>
-                            <option value="<?= e($opt) ?>" <?= $opt === $genre ? 'selected' : '' ?>><?= e($opt) ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                <!-- Filtrlar: soha, kategoriya, janr – maxsus dropdown'lar.
+                     Bosilganda ro'yxat ochiladi va chevron tepaga buriladi (assets/js/dropdown.js).
+                     Variant tanlansa forma o'zi yuboriladi. -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <?php renderFilterDropdown('field', 'Soha', 'Barcha sohalar', $fieldOptions, $field); ?>
+                    <?php renderFilterDropdown('category', 'Kategoriya', 'Barcha kategoriyalar', BOOK_CATEGORIES, $category); ?>
+                    <?php renderFilterDropdown('genre', 'Janr', 'Barcha janrlar', $genreOptions, $genre); ?>
                 </div>
 
                 <?php if ($hasFilter): ?>
@@ -359,7 +302,7 @@ $selectClass = 'w-full min-w-0 h-11 rounded-xl border border-white/20 bg-white/1
             <?php endforeach; ?>
         </div>
     <?php elseif ($books): ?>
-        <!-- Faqat tanlovlar: kartochkalar -->
+        <!-- Faqat tanlovlar: kartochkalar (renderModernBookCard – book_helpers.php da) -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             <?php foreach ($books as $book): ?>
                 <?php renderModernBookCard($book); ?>

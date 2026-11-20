@@ -459,8 +459,11 @@ require_once __DIR__ . '/includes/header.php';
                         <td class="px-4 py-3"><?= reservationBadge($r) ?></td>
                         <td class="px-4 py-3 text-right">
                             <?php if ($r['status'] === 'kutilmoqda'): ?>
-                                <form method="post" action="<?= e(url('cabinet.php')) ?>"
-                                      onsubmit="return confirm('Band qilishni bekor qilmoqchimisiz?');">
+                                <form method="post" action="<?= e(url('cabinet.php')) ?>" data-once
+                                    data-confirm-title="Band qilish bekor qilinsinmi?"
+                                    data-confirm-text="<?= e('«' . $r['title'] . '» kitobining band qilinishi bekor qilinadi.') ?>"
+                                    data-confirm-ok="Ha, bekor qilish"
+                                    data-confirm-tone="danger">
                                     <?= csrfField() ?>
                                     <input type="hidden" name="cancel_id" value="<?= (int) $r['id'] ?>">
                                     <button type="submit"
@@ -512,8 +515,11 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
 
                 <?php if ($r['status'] === 'kutilmoqda'): ?>
-                    <form method="post" action="<?= e(url('cabinet.php')) ?>" class="mt-3"
-                          onsubmit="return confirm('Band qilishni bekor qilmoqchimisiz?');">
+                    <form method="post" action="<?= e(url('cabinet.php')) ?>" data-once
+                        data-confirm-title="Band qilish bekor qilinsinmi?"
+                        data-confirm-text="<?= e('«' . $r['title'] . '» kitobining band qilinishi bekor qilinadi.') ?>"
+                        data-confirm-ok="Ha, bekor qilish"
+                        data-confirm-tone="danger">
                         <?= csrfField() ?>
                         <input type="hidden" name="cancel_id" value="<?= (int) $r['id'] ?>">
                         <button type="submit"
