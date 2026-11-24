@@ -46,6 +46,8 @@
     var bookIdEl     = document.getElementById('bookModalBookId');
     var pickupSelect = document.getElementById('modal_pickup_days');
     var moreLink     = document.getElementById('bookModalMore');
+    var readLink     = document.getElementById('bookModalRead');
+    var readGuest    = document.getElementById('bookModalReadGuest');
 
     // Offlayn berish (faqat kutubxonachi) elementlari
     var offlineBtn      = document.getElementById('bookModalOfflineBtn');
@@ -169,6 +171,15 @@
             pickupSelect.value = '1';
         }
         moreLink.href          = card.href;
+        // Onlayn o'qish: PDF bor bo'lsa tizimga kirganga tugma, mehmonga taklif ko'rsatiladi
+        var hasPdf = data.hasPdf === '1';
+        if (readLink) {
+            readLink.classList.toggle('hidden', !(hasPdf && role !== 'guest'));
+            readLink.href = data.readUrl || '#';
+        }
+        if (readGuest) {
+            readGuest.classList.toggle('hidden', !(hasPdf && role === 'guest'));
+        }
 
         // Bo'sh nusxalar belgisi
         availEl.textContent = available > 0

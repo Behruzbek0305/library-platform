@@ -154,6 +154,7 @@ function orderPayload(array $r): string
         'author'    => (string) ($r['book_author'] ?? ''),
         'genre'     => (string) ($r['book_genre'] ?? ''),
         'cover'     => !empty($r['cover_image']) ? url((string) $r['cover_image']) : '',
+        'read'      => !empty($r['pdf_file']) ? url('read.php?id=' . (int) $r['book_id']) : '',
         'emoji'     => $style['emoji'],
         'student'   => (string) $r['user_name'],
         'hemis'     => (string) ($r['hemis_id'] ?? ''),
@@ -473,7 +474,7 @@ try {
                    u.name AS user_name, u.email AS user_email,
                    u.faculty, u.direction, u.group_name, u.hemis_id,
                    b.id AS book_id, b.title AS book_title, b.author AS book_author,
-                   b.genre AS book_genre, b.category AS book_category, b.cover_image,
+                   b.genre AS book_genre, b.category AS book_category, b.cover_image, b.pdf_file,
                    staff.name    AS staff_name,
                    returner.name AS returner_name,
                    rejecter.name AS rejecter_name
@@ -843,11 +844,16 @@ require_once __DIR__ . '/../includes/header.php';
                 <p class="text-sm text-slate-600"><b>Janr:</b> <span id="omGenre"></span></p>
             </div>
 
+            <a id="omRead" href="#"
+               class="hidden block text-center bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-md px-5 py-2.5">
+                📖 Onlayn o'qish
+            </a>
+
             <!-- Avto-rad etilgan ogohlantirishi -->
-            <div id="omAuto" class="hidden border border-orange-300 bg-orange-50 text-orange-800 rounded-md px-3 py-2 text-sm">
+            <did="omAuto" class="hidden border border-orange-300 bg-orange-50 text-orange-800 rounded-md px-3 py-2 text-sm">
                 ⏱️ Bu band qilish olib ketish muddati o'tgani uchun <b>avtomatik rad etilgan</b>.
                 Kitob nusxasi boshqa talabalar uchun bo'shatilgan.
-            </div>
+            </did=>
 
             <!-- Talaba -->
             <div class="border border-slate-200 rounded-lg p-3">
@@ -1012,6 +1018,10 @@ require_once __DIR__ . '/../includes/header.php';
 
         // Avto-rad etilgan ogohlantirishi
         $('omAuto').classList.toggle('hidden', !d.auto);
+
+        // Onlayn o'qish tugmasi (kitobda PDF bo'lsa)
+        $('omRead').classList.toggle('hidden', !d.read);
+        $('omRead').href = d.read || '#';
     }
 
     function openModal(trigger) {

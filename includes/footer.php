@@ -117,6 +117,18 @@ $footerLink = 'text-slate-300 hover:text-white transition-colors';
 
                 <p id="bookModalDesc" class="mt-3 text-sm text-slate-700 whitespace-pre-line break-words"></p>
 
+                <!-- Onlayn o'qish: kitobda PDF bor va foydalanuvchi tizimga kirgan bo'lsa JS ko'rsatadi.
+                     Bo'sh nusxa bo'lmasa ham ishlaydi (o'qish nusxaga bog'liq emas). -->
+                <a id="bookModalRead" href="#"
+                   class="hidden mt-4 block text-center bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-md px-5 py-2.5">
+                    📖 Onlayn o'qish
+                </a>
+                <!-- Mehmon uchun: PDF bor, lekin tizimga kirmagan -->
+                <p id="bookModalReadGuest" class="hidden mt-4 text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
+                    📖 Bu kitobni onlayn o'qish mumkin.
+                    <a href="<?= e(url('login.php')) ?>" class="underline font-semibold">Tizimga kiring</a>.
+                </p>
+
                 <!-- ====== HOLATGA QARAB TUGMALAR (qaysi biri ko'rinishini JS belgilaydi) ====== -->
                 <div class="mt-5">
 

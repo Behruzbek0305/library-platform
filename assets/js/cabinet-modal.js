@@ -46,6 +46,7 @@
     var timerLabel  = document.getElementById('resModalTimerLabel');
     var timerEl     = document.getElementById('resModalTimer');
     var moreLink    = document.getElementById('resModalMore');
+    var readLink = document.getElementById('resModalRead');
 
     var FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
     var BG_CLASSES = ['bg-slate-100', 'bg-blue-100', 'bg-pink-100', 'bg-green-100', 'bg-slate-200'];
@@ -131,6 +132,11 @@
         titleEl.textContent  = d.title || '';
         authorEl.textContent = d.author || '';
         moreLink.href        = d.bookUrl || '#';
+        // Onlayn o'qish tugmasi
+        if (readLink) {
+            readLink.classList.toggle('hidden', !d.readUrl);
+            readLink.href = d.readUrl || '#';
+        }
 
         // Holat belgisi
         statusEl.textContent = d.status || '';

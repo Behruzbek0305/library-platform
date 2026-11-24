@@ -94,6 +94,26 @@ require_once __DIR__ . '/includes/header.php';
             <?= e($book['description'] ?: 'Tavsif kiritilmagan.') ?>
         </p>
 
+        <!-- ====== ONLAYN O'QISH (kitobda PDF bo'lsa) ====== -->
+        <?php if (!empty($book['pdf_file'])): ?>
+            <div class="mt-5">
+                <?php if ($user !== null): ?>
+                    <a href="<?= e(url('read.php?id=' . (int) $book['id'])) ?>"
+                       class="inline-block bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-md px-5 py-2.5">
+                        📖 Onlayn o'qish
+                    </a>
+                    <p class="text-xs text-slate-500 mt-1">
+                        Kitobni ko'rib chiqing, kerak bo'lsa band qilib kutubxonadan olib keting.
+                    </p>
+                <?php else: ?>
+                    <p class="text-sm text-slate-500">
+                        📖 Bu kitobni onlayn ko'rish mumkin.
+                        <a href="<?= e(url('login.php')) ?>" class="text-blue-600 hover:underline">Tizimga kiring</a>.
+                    </p>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
+
         <!-- ====== BAND QILISH TUGMASI (foydalanuvchi holatiga qarab) ====== -->
         <div class="mt-6">
             <?php if ($user === null): ?>

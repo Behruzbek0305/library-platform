@@ -179,6 +179,8 @@ function bookDataAttrs(array $book): string
         'data-emoji'       => $style['emoji'],
         'data-bg'          => $style['bg'],
         'data-booked'      => in_array((int) $book['id'], userBookedIds(), true) ? '1' : '0',
+        'data-has-pdf'     => !empty($book['pdf_file']) ? '1' : '0',
+        'data-read-url'    => url('read.php?id=' . (int) $book['id']),
     ];
 
     $out = [];
@@ -264,6 +266,13 @@ function renderModernBookCard(array $book): void
                 <span class="w-1.5 h-1.5 rounded-full <?= $available > 0 ? 'bg-green-500' : 'bg-red-500' ?>"></span>
                 <?= $available > 0 ? 'Bor: ' . $available . ' ta' : "Hozir yo'q" ?>
             </span>
+            <!-- Onlayn nusxa (PDF) bor bo'lsa: o'ng yuqori burchakda belgi -->
+            <?php if (!empty($book['pdf_file'])): ?>
+                <span class="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm"
+                      title="Bu kitobni onlayn o'qish mumkin">
+                    📖 Onlayn
+                </span>
+            <?php endif; ?>
         </div>
 
         <div class="flex-1 p-4">
@@ -381,6 +390,11 @@ function renderBookRow(array $book): void
             <span class="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
                 <?= e($book['category']) ?>
             </span>
+                        <?php if (!empty($book['pdf_file'])): ?>
+                <span class="inline-block mt-1 ml-1 text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">
+                    📖 Onlayn
+                </span>
+            <?php endif; ?>
         </div>
 
         <!-- Bor yoki yo'q -->
@@ -413,6 +427,43 @@ function deleteCoverFile(?string $relativePath): void
     if (is_file($fullPath)) {
         @unlink($fullPath);
     }
+}
+
+// ------------------------------------------------------------
+// 3.2. KITOB PDF FAYLI BILAN ISHLASH (onlayn mutolaa)
+// ------------------------------------------------------------
+
+/**
+ * Kitobning PDF faylini diskdan o'chiradi (kitob o'chirilganda, PDF almashtirilganda
+ * yoki olib tashlanganda). Faqat uploads/books/ papkasidagi fayllar o'chiriladi.
+ */
+function deleteBookPdfFile(?string $relativePath): void
+{
+    if ($relativePath === null || $relativePath === ''
+        || !str_starts_with($relativePath, 'uploads/books/')
+        || str_contains($relativePath, '..')) {
+        return;
+    }
+
+    $fullPath = __DIR__ . '/../' . $relativePath;
+    if (is_file($fullPath)) {
+        @unlink($fullPath);
+    }
+}
+
+/** Fayl hajmini o'qishga qulay ko'rinishda chiqaradi: 13002342 → "12,4 MB" */
+function formatFileSize(?int $bytes): string
+{
+    $bytes = (int) $bytes;
+
+    if ($bytes <= 0) {
+        return '';
+    }
+    if ($bytes >= 1048576) {
+        return number_format($bytes / 1048576, 1, ',', ' ') . ' MB';
+    }
+
+    return number_format($bytes / 1024, 0, ',', ' ') . ' KB';
 }
 
 // ------------------------------------------------------------

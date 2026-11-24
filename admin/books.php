@@ -161,7 +161,7 @@ function renderLoanBadges(array $b): void
     echo '</div>';
 }
 
-/** Kategoriya, soha va janr belgilari */
+/** Kategoriya, soha, janr va PDF belgilari */
 function renderBookTags(array $b): void
 {
     echo '<div class="flex flex-wrap gap-1">';
@@ -172,6 +172,12 @@ function renderBookTags(array $b): void
     }
     if (!empty($b['genre'])) {
         echo '<span class="text-xs px-2 py-0.5 rounded-full bg-pink-50 text-pink-700" title="Janr">🎭 ' . e($b['genre']) . '</span>';
+    }
+    // Onlayn nusxa (PDF) bor bo'lsa: hajmi bilan birga ko'rsatiladi
+    if (!empty($b['pdf_file'])) {
+        $size = formatFileSize((int) ($b['pdf_size'] ?? 0));
+        echo '<span class="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium whitespace-nowrap" title="Onlayn o\'qish uchun PDF yuklangan">📄 PDF'
+           . ($size !== '' ? ' · ' . e($size) : '') . '</span>';
     }
     echo '</div>';
 }
@@ -250,7 +256,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 setFlash('error', "Bu kitobni o'chirib bo'lmaydi: u band qilingan yoki talabada turibdi.");
             } else {
                 // Muqova rasmi nomini avval olib qo'yamiz (diskdan o'chirish uchun)
-                $stmt = $pdo->prepare('SELECT title, cover_image FROM books WHERE id = :id');
+                $stmt = $pdo->prepare('SELECT title, cover_image, pdf_file FROM books WHERE id = :id');
                 $stmt->execute([':id' => $id]);
                 $book = $stmt->fetch();
 
@@ -259,6 +265,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $del->execute([':id' => $id]);
 
                     deleteCoverFile($book['cover_image']);
+                    deleteBookPdfFile($book['pdf_file'] ?? null);   // onlayn nusxa (PDF) ham diskdan o'chadi
                     setFlash('success', "«" . $book['title'] . "» o'chirildi.");
                 } else {
                     setFlash('error', 'Bunday kitob topilmadi.');

@@ -148,6 +148,8 @@ function reservationDataAttrs(array $r): string
         'data-title'        => (string) $r['title'],
         'data-author'       => (string) $r['author'],
         'data-book-url'     => url('book.php?id=' . (int) $r['book_id']),
+        // Onlayn o'qish manzili (kitobda PDF bo'lmasa bo'sh)
+        'data-read-url'     => !empty($r['pdf_file']) ? url('read.php?id=' . (int) $r['book_id']) : '',
         'data-cover'        => !empty($r['cover_image']) ? url((string) $r['cover_image']) : '',
         'data-emoji'        => $style['emoji'],
         'data-bg'           => $style['bg'],
@@ -323,7 +325,7 @@ try {
         'SELECT r.id, r.reserved_date, r.created_at, r.pickup_days, r.pickup_deadline, r.status,
                 r.picked_up_at, r.returned_at, r.due_date, r.pickup_code,
                 r.served_by, r.rejected_by, r.is_offline,
-                b.id AS book_id, b.title, b.author, b.category, b.cover_image,
+                b.id AS book_id, b.title, b.author, b.category, b.cover_image, b.pdf_file,
                 staff.name AS staff_name,
                 returner.name AS returner_name,
                 rejecter.name AS rejecter_name
@@ -602,6 +604,12 @@ require_once __DIR__ . '/includes/header.php';
                 <span id="resModalTimerLabel" class="text-slate-600"></span>
                 <span id="resModalTimer" class="inline-block px-2 py-0.5 rounded font-mono font-semibold"></span>
             </div>
+
+            <!-- Onlayn o'qish (kitobda PDF bo'lsa JS ko'rsatadi) -->
+            <a id="resModalRead" href="#"
+               class="hidden mt-4 block text-center bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-md px-5 py-2.5">
+                📖 Onlayn o'qish
+            </a>
 
             <a id="resModalMore" href="#" class="block mt-4 text-center text-sm text-blue-600 hover:underline">
                 Kitob sahifasini ochish →
