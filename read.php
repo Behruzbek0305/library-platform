@@ -9,10 +9,22 @@
  *    - StPageFlip – varaqni burchakdan bukib o'giradi (sichqoncha va barmoq bilan)
  *    Kompyuterda 2 betlik, tor ekranda (telefon) 1 betlik rejim avtomatik tanlanadi.
  *
+ *  TUZATISHLAR (telefonda varaqlash):
+ *    1) Betlar endi <canvas> emas, <img> ko'rinishida varaq ichiga qo'yiladi:
+ *       mobil brauzerlarda clip-path/transform ostidagi canvas shaffof bo'lib
+ *       qolardi. PDF.js avval yashirin canvas'ga chizadi, keyin JPEG rasmga
+ *       aylantirib <img> ga beradi (xotira: eski rasm URL'i bo'shatiladi).
+ *    2) flip.update() varaq o'girilayotgan paytda chaqirilmaydi va faqat o'lcham
+ *       haqiqatan o'zgarganda ishlaydi (animatsiya uzilib, bet "tushib" qolmasin).
+ *    3) mobileScrollSupport o'chirildi + touch-action: none: brauzer surish
+ *       gestini o'zi olib qo'ymaydi.
+ *    4) Qattiq (hard) muqova faqat keng ekranda; telefonda oddiy varaq.
+ *    5) 100vh o'rniga 100dvh: manzil paneli o'zgarganda o'lcham sakramaydi.
+ *
  *  Katta PDF (300+ bet) uchun optimizatsiya:
  *    - hamma bet birdaniga chizilmaydi: faqat joriy bet atrofidagi betlar (orqada 2, oldinda 3)
- *    - uzoqlashgan betlarning canvas'i bo'shatiladi (xotira to'lib, telefon qotib qolmasin)
- *    - tiniqlik: canvas o'lchami devicePixelRatio bilan (ko'pi bilan 1600 px kenglikda)
+ *    - uzoqlashgan betlarning rasmi bo'shatiladi (xotira to'lib, telefon qotib qolmasin)
+ *    - tiniqlik: o'lcham devicePixelRatio bilan (ko'pi bilan 1600 px kenglikda)
  *    - PDF butunlay yuklanmaydi (disableAutoFetch): kerakli bo'laklar Range so'rovi bilan
  *      read_pdf.php dan olinadi
  *    - thumbnail paneli: faqat ekranda ko'rinib turgan kichik rasmlar chiziladi
@@ -112,10 +124,20 @@ $btn = 'h-9 min-w-[2.25rem] px-2 rounded-md border border-slate-300 bg-white hov
     }
     /* Matn belgilash va rasmni sudrab olish o'chirilgan */
     #stage { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+    /* Varaq o'girish gesti: brauzer surishni o'zi olib qo'ymasin (telefonda animatsiya uzilmasligi uchun) */
+    #bookHost, #book { touch-action: none; }
     /* To'liq ekran rejimida o'quvchi butun ekranni egallaydi */
     #reader:fullscreen { height: 100vh !important; border-radius: 0; border: 0; }
-    /* Bet canvas'i: bo'sh paytda ostidagi bet raqami ko'rinib turadi */
+    /* Thumbnail canvas'i: bo'sh paytda ostidagi bet raqami ko'rinib turadi */
     .rd-canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: transparent; }
+    /* Kitob beti rasmi (<img>): varaq ichida butun betni egallaydi, sichqoncha hodisalariga xalaqit bermaydi */
+    .rd-img {
+        position: absolute; inset: 0; width: 100%; height: 100%;
+        object-fit: contain; background: #fff;
+        pointer-events: none; -webkit-user-drag: none; user-select: none;
+    }
+    /* Har bir varaq oq fonli bo'lsin (varaq o'girilganda shaffof ko'rinmasligi uchun) */
+    #book .page { background: #fff; }
 </style>
 
 <div class="flex flex-wrap items-center justify-between gap-2">
@@ -123,8 +145,9 @@ $btn = 'h-9 min-w-[2.25rem] px-2 rounded-md border border-slate-300 bg-white hov
     <p class="text-xs text-slate-500">Onlayn nusxa faqat tanishish uchun. Kitobni kutubxonadan olib keting.</p>
 </div>
 
+<!-- Balandlik: avval oddiy vh (eski brauzerlar), keyin dvh (telefonda manzil paneliga sezgir emas) -->
 <div id="reader" class="mt-2 bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col"
-     style="height: calc(100vh - 150px); min-height: 520px;">
+     style="height: calc(100vh - 150px); height: calc(100dvh - 150px); min-height: 520px;">
 
     <!-- ====== YUQORI PANEL: panel tugmasi, kitob nomi, bet, to'liq ekran ====== -->
     <div class="border-b border-slate-200 bg-slate-50 px-3 py-2 flex flex-wrap items-center gap-2">
@@ -193,9 +216,10 @@ $btn = 'h-9 min-w-[2.25rem] px-2 rounded-md border border-slate-300 bg-white hov
     // ------------------------------------------------------------
     var AHEAD        = 3;      // joriy betdan oldinga nechta bet oldindan chiziladi
     var BEHIND       = 2;      // orqaga nechta bet
-    var KEEP         = 8;      // shu masofadan uzoqdagi betlarning canvas'i bo'shatiladi
-    var MAX_PX       = 1600;   // bet canvas'ining eng katta kengligi (piksel) – telefon xotirasi uchun
+    var KEEP         = 8;      // shu masofadan uzoqdagi betlarning rasmi bo'shatiladi
+    var MAX_PX       = 1600;   // bet rasmining eng katta kengligi (piksel) – telefon xotirasi uchun
     var THUMB_PX     = 220;    // thumbnail canvas kengligi (piksel)
+    var JPEG_QUALITY = 0.9;    // bet rasmi sifati (0..1)
     var DPR          = Math.min(window.devicePixelRatio || 1, 2.5);
 
     var reader      = document.getElementById('reader');
@@ -222,14 +246,15 @@ $btn = 'h-9 min-w-[2.25rem] px-2 rounded-md border border-slate-300 bg-white hov
     var cur      = 0;        // hozirgi (chap) bet indeksi, 0 dan boshlanadi
     var ready    = false;    // kitob to'liq tayyor bo'ldimi
 
-    var pages      = [];     // [{wrap, canvas, key}]  key = qaysi o'lchamda chizilgani (-1 = chizilmagan)
+    var pages      = [];     // [{wrap, img, url, key}]  key = qaysi o'lchamda chizilgani (-1 = chizilmagan)
     var thumbs     = [];     // [{box, canvas, state, visible}]
     var thumbQueue = [];     // chizilishi kutilayotgan thumbnail indekslari
     var tocButtons = [];     // [{node, page}]
     var busy       = false;  // chizish navbati band yoki yo'q
-    var currentPx  = 800;    // hozirgi bet uchun canvas kengligi (piksel)
+    var currentPx  = 800;    // hozirgi bet uchun rasm kengligi (piksel)
     var sizeKey    = 0;      // o'lcham "chelagi": o'zgarsa betlar qayta chiziladi
     var litThumbs  = [];     // hozir ajratib ko'rsatilgan thumbnail'lar
+    var lastStageW = 0, lastStageH = 0;   // maydonning oxirgi o'lchami (keraksiz qayta hisoblashni oldini olish)
     var STORAGE_KEY = 'readpos:' + CONFIG.userId + ':' + CONFIG.bookId;
 
     /** Element yaratadi (matn faqat textContent orqali – XSS bo'lmaydi) */
@@ -267,7 +292,7 @@ $btn = 'h-9 min-w-[2.25rem] px-2 rounded-md border border-slate-300 bg-white hov
 
     // ------------------------------------------------------------
     // 2. O'LCHAMNI ANIQLASH
-    //    Ko'rinib turgan bet qancha kenglikda ekanini o'lchab, canvas piksel o'lchamini hisoblaymiz.
+    //    Ko'rinib turgan bet qancha kenglikda ekanini o'lchab, rasm piksel o'lchamini hisoblaymiz.
     // ------------------------------------------------------------
     function measure() {
         var w = 0;
@@ -302,11 +327,14 @@ $btn = 'h-9 min-w-[2.25rem] px-2 rounded-md border border-slate-300 bg-white hov
         return out;
     }
 
-    /** Bet canvas'ini bo'shatadi (xotirani qaytaradi) */
+    /** Bet rasmini bo'shatadi (xotirani qaytaradi): URL bekor qilinadi, <img> tozalanadi */
     function freePage(i) {
         var p = pages[i];
-        p.canvas.width = 0;
-        p.canvas.height = 0;
+        p.img.removeAttribute('src');
+        if (p.url) {
+            URL.revokeObjectURL(p.url);
+            p.url = null;
+        }
         p.key = -1;
     }
 
@@ -319,7 +347,10 @@ $btn = 'h-9 min-w-[2.25rem] px-2 rounded-md border border-slate-300 bg-white hov
         pump();
     }
 
-    /** Bitta betni chizadi (avval yashirin canvas'ga, so'ng ko'rinadiganiga ko'chiradi: miltillash bo'lmaydi) */
+    /**
+     * Bitta betni chizadi: avval yashirin canvas'ga (oq fon bilan), so'ng JPEG rasmga
+     * aylantirib <img> ga beradi. Rasm tayyor bo'lgandagina almashadi – miltillash bo'lmaydi.
+     */
     function renderPage(i) {
         var p = pages[i];
         var wantedKey = sizeKey;
@@ -333,15 +364,35 @@ $btn = 'h-9 min-w-[2.25rem] px-2 rounded-md border border-slate-300 bg-white hov
             off.width  = Math.floor(vp.width);
             off.height = Math.floor(vp.height);
 
-            return page.render({ canvasContext: off.getContext('2d'), viewport: vp }).promise.then(function () {
-                p.canvas.width  = off.width;
-                p.canvas.height = off.height;
-                p.canvas.getContext('2d').drawImage(off, 0, 0);
-                p.key = wantedKey;
+            var ctx = off.getContext('2d');
+            // JPEG shaffoflikni qo'llamaydi (qora bo'lib qoladi), shuning uchun oq fon beramiz
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, off.width, off.height);
 
-                off.width = 0;      // vaqtinchalik canvas xotirasini qaytaramiz
-                off.height = 0;
-                page.cleanup();
+            return page.render({ canvasContext: ctx, viewport: vp }).promise.then(function () {
+                return new Promise(function (resolve, reject) {
+                    off.toBlob(function (blob) {
+                        // Vaqtinchalik canvas xotirasini qaytaramiz
+                        off.width = 0;
+                        off.height = 0;
+                        page.cleanup();
+
+                        if (!blob) { reject(new Error('toBlob')); return; }
+
+                        var oldUrl = p.url;
+                        var newUrl = URL.createObjectURL(blob);
+
+                        p.url = newUrl;
+                        p.img.src = newUrl;
+                        p.key = wantedKey;
+
+                        // Eski rasm URL'ini biroz kutib bo'shatamiz (almashish paytida miltillamasin)
+                        if (oldUrl) {
+                            setTimeout(function () { URL.revokeObjectURL(oldUrl); }, 1500);
+                        }
+                        resolve();
+                    }, 'image/jpeg', JPEG_QUALITY);
+                });
             });
         });
     }
@@ -493,7 +544,7 @@ $btn = 'h-9 min-w-[2.25rem] px-2 rounded-md border border-slate-300 bg-white hov
         sidePanel.classList.toggle('hidden', !open);
         panelToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
         // Panel ochilib-yopilganda kitob maydoni o'zgaradi: kutubxona qayta hisoblasin
-        setTimeout(refreshLayout, 60);
+        setTimeout(function () { refreshLayout(); }, 60);
     }
 
     function buildToc() {
@@ -584,22 +635,30 @@ $btn = 'h-9 min-w-[2.25rem] px-2 rounded-md border border-slate-300 bg-white hov
     // 7. KITOBNI YASASH (StPageFlip)
     // ------------------------------------------------------------
     function buildBook(startIdx) {
-        // Har bir bet uchun bo'sh qolip: ichida bet raqami va canvas (lazy chiziladi)
+        // Qattiq muqova faqat keng ekranda: telefonda oddiy varaq (shaffof bo'lib qolmasligi uchun)
+        var useHardCovers = window.innerWidth >= 768;
+
+        // Har bir bet uchun bo'sh qolip: ichida bet raqami va <img> (lazy to'ldiriladi)
         for (var i = 0; i < numPages; i++) {
             var wrap = el('div', 'page');
             wrap.style.background = '#fff';
             wrap.style.overflow = 'hidden';
-            // Birinchi va oxirgi bet – qattiq muqova
-            if (i === 0 || i === numPages - 1) { wrap.setAttribute('data-density', 'hard'); }
+            // Birinchi va oxirgi bet – qattiq muqova (faqat keng ekranda)
+            if (useHardCovers && (i === 0 || i === numPages - 1)) { wrap.setAttribute('data-density', 'hard'); }
 
             var label = el('span', '', String(i + 1));
             label.style.cssText = 'position:absolute;inset:0;display:grid;place-items:center;color:#cbd5e1;font-size:2rem;font-weight:700;';
-            var cv = el('canvas', 'rd-canvas');
+
+            var img = document.createElement('img');
+            img.className = 'rd-img';
+            img.alt = '';
+            img.draggable = false;
+            img.decoding = 'async';
 
             wrap.appendChild(label);
-            wrap.appendChild(cv);
+            wrap.appendChild(img);
             bookEl.appendChild(wrap);
-            pages.push({ wrap: wrap, canvas: cv, key: -1 });
+            pages.push({ wrap: wrap, img: img, url: null, key: -1 });
         }
 
         flip = new St.PageFlip(bookEl, {
@@ -610,7 +669,7 @@ $btn = 'h-9 min-w-[2.25rem] px-2 rounded-md border border-slate-300 bg-white hov
             minHeight: 320, maxHeight: 1400,
             showCover: true,            // birinchi bet – yakka muqova
             usePortrait: true,          // tor ekranda (telefon) 1 betlik rejim
-            mobileScrollSupport: true,
+            mobileScrollSupport: false, // brauzer surish gestini o'zi olib qo'ymasin
             drawShadow: true,
             maxShadowOpacity: 0.5,
             flippingTime: 700,
@@ -636,6 +695,8 @@ $btn = 'h-9 min-w-[2.25rem] px-2 rounded-md border border-slate-300 bg-white hov
             started = true;
             ready = true;
             hideMessage();
+            lastStageW = stage.clientWidth;
+            lastStageH = stage.clientHeight;
             cur = flip.getCurrentPageIndex();
             measure();
             updateUI();
@@ -645,15 +706,32 @@ $btn = 'h-9 min-w-[2.25rem] px-2 rounded-md border border-slate-300 bg-white hov
         setTimeout(afterInit, 400);
     }
 
-    /** Maydon o'lchami o'zgarganda (panel, to'liq ekran, burish) kitobni qayta hisoblaydi */
+    /**
+     * Maydon o'lchami o'zgarganda (panel, to'liq ekran, burish) kitobni qayta hisoblaydi.
+     *  - varaq o'girilayotgan (state != 'read') paytda TEGMAYDI: animatsiya uzilmasin,
+     *    tinchlangach qayta urinadi;
+     *  - o'lcham haqiqatan o'zgarmagan bo'lsa (masalan telefonda manzil paneli) – hech narsa qilmaydi.
+     */
     var layoutTimer = null;
     function refreshLayout() {
         if (!flip || !ready) { return; }
         clearTimeout(layoutTimer);
         layoutTimer = setTimeout(function () {
+            // Varaq hozir o'girilyapti – keyinroq qaytamiz
+            if (typeof flip.getState === 'function' && flip.getState() !== 'read') {
+                refreshLayout();
+                return;
+            }
+
+            var w = stage.clientWidth;
+            var h = stage.clientHeight;
+            if (Math.abs(w - lastStageW) < 2 && Math.abs(h - lastStageH) < 2) { return; }
+            lastStageW = w;
+            lastStageH = h;
+
             try { flip.update(); } catch (e) { /* kutubxona hali tayyor emas */ }
             setTimeout(function () { measure(); schedule(); }, 120);
-        }, 150);
+        }, 200);
     }
 
     // ------------------------------------------------------------
@@ -695,7 +773,7 @@ $btn = 'h-9 min-w-[2.25rem] px-2 rounded-md border border-slate-300 bg-white hov
         fsToggle.addEventListener('click', function () {
             if (document.fullscreenElement) { document.exitFullscreen(); } else { reader.requestFullscreen(); }
         });
-        document.addEventListener('fullscreenchange', refreshLayout);
+        document.addEventListener('fullscreenchange', function () { refreshLayout(); });
     }
 
     // O'ng tugma menyusi ("Rasmni saqlash") va rasmni sudrab olish o'chirilgan
@@ -704,9 +782,9 @@ $btn = 'h-9 min-w-[2.25rem] px-2 rounded-md border border-slate-300 bg-white hov
 
     // Oyna o'lchami o'zgarsa (telefonni burish va h.k.) kitob qayta hisoblanadi
     if (window.ResizeObserver) {
-        new ResizeObserver(refreshLayout).observe(stage);
+        new ResizeObserver(function () { refreshLayout(); }).observe(stage);
     } else {
-        window.addEventListener('resize', refreshLayout);
+        window.addEventListener('resize', function () { refreshLayout(); });
     }
 
     // ------------------------------------------------------------

@@ -850,10 +850,10 @@ require_once __DIR__ . '/../includes/header.php';
             </a>
 
             <!-- Avto-rad etilgan ogohlantirishi -->
-            <did="omAuto" class="hidden border border-orange-300 bg-orange-50 text-orange-800 rounded-md px-3 py-2 text-sm">
+            <div id="omAuto" class="hidden border border-orange-300 bg-orange-50 text-orange-800 rounded-md px-3 py-2 text-sm">
                 ⏱️ Bu band qilish olib ketish muddati o'tgani uchun <b>avtomatik rad etilgan</b>.
                 Kitob nusxasi boshqa talabalar uchun bo'shatilgan.
-            </did=>
+            </div>
 
             <!-- Talaba -->
             <div class="border border-slate-200 rounded-lg p-3">
